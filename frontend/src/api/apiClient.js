@@ -1,86 +1,164 @@
-// Base URL for API calls
-const API_BASE_URL = 'http://localhost:5000/api';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/**
- * API client for interacting with the backend services
- */
-export const apiClient = {
-  // Health check endpoint
-  checkHealth: async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/health`);
-      return await response.json();
-    } catch (error) {
-      console.error('API Health Check Error:', error);
-      throw error;
+// Get API URL from AsyncStorage or use default
+const getApiBaseUrl = async () => {
+  try {
+    const settings = await AsyncStorage.getItem('app_settings');
+    if (settings) {
+      const parsedSettings = JSON.parse(settings);
+      return parsedSettings.apiUrl || 'https://your-api-url.com/api';
     }
-  },
-
-  // AI features
-  summarizeText: async (text) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/summarize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Summarization Error:', error);
-      throw error;
-    }
-  },
-
-  // Image to text conversion
-  extractTextFromImage: async (imageBase64) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/image-to-text`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: imageBase64 }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Image to Text Error:', error);
-      throw error;
-    }
-  },
-  
-  // Speech to text conversion
-  speechToText: async (audioBase64) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/speech-to-text`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ audio: audioBase64 }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Speech to Text Error:', error);
-      throw error;
-    }
-  },
-  
-  // Get suggestions based on text
-  getSuggestions: async (text) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/suggestions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ text }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Suggestions Error:', error);
-      throw error;
-    }
-  },
+  } catch (error) {
+    console.error("Error getting API URL:", error);
+  }
+  return 'https://your-api-url.com/api';
 };
+
+// Create axios instance with defaults
+const createApiClient = async () => {
+  const baseURL = await getApiBaseUrl();
+  return axios.create({
+    baseURL,
+    timeout: 10000,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    }
+  });
+};
+
+// Dummy implementations for offline development
+const dummyNotes = [
+  {
+    id: 'note_1',
+    title: 'Welcome to Smart Notes',
+    content: 'This is a sample note to get you started. You can edit or delete it.',
+    categoryId: 'cat_1',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'note_2',
+    title: 'How to use categories',
+    content: 'Organize your notes by assigning them to different categories.',
+    categoryId: 'cat_2',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+const dummyCategories = [
+  { id: 'cat_1', name: 'Personal', color: '#4caf50' },
+  { id: 'cat_2', name: 'Work', color: '#2196f3' },
+  { id: 'cat_3', name: 'Ideas', color: '#ff9800' }
+];
+
+// API methods with offline fallbacks
+export const notesApi = {
+  // Notes CRUD operations
+  getNotes: async () => {
+    try {
+      const api = await createApiClient();
+      return await api.get('/notes');
+    } catch (error) {
+      console.log('Offline mode: Returning dummy notes');
+      return { data: dummyNotes };
+    }
+  },
+  
+  getNote: async (id) => {
+    try {
+      const api = await createApiClient();
+      return await api.get(`/notes/${id}`);
+    } catch (error) {
+      const note = dummyNotes.find(note => note.id === id);
+      return { data: note || null };
+    }
+  },
+  
+  createNote: async (data) => {
+    try {
+      const api = await createApiClient();
+      return await api.post('/notes', data);
+    } catch (error) {
+      const newNote = {
+        ...data,
+        id: `note_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      return { data: newNote };
+    }
+  },
+  
+  updateNote: async (id, data) => {
+    try {
+      const api = await createApiClient();
+      return await api.put(`/notes/${id}`, data);
+    } catch (error) {
+      return { data: { ...data, id, updatedAt: new Date().toISOString() } };
+    }
+  },
+  
+  deleteNote: async (id) => {
+    try {
+      const api = await createApiClient();
+      return await api.delete(`/notes/${id}`);
+    } catch (error) {
+      return { data: { success: true } };
+    }
+  },
+  
+  // Categories
+  getCategories: async () => {
+    try {
+      const api = await createApiClient();
+      return await api.get('/categories');
+    } catch (error) {
+      console.log('Offline mode: Returning dummy categories');
+      return { data: dummyCategories };
+    }
+  },
+  
+  // User auth
+  login: async (credentials) => {
+    try {
+      const api = await createApiClient();
+      return await api.post('/auth/login', credentials);
+    } catch (error) {
+      return { data: { token: 'dummy_token' } };
+    }
+  },
+  
+  register: async (userData) => {
+    try {
+      const api = await createApiClient();
+      return await api.post('/auth/register', userData);
+    } catch (error) {
+      return { data: { success: true } };
+    }
+  },
+  
+  // Offline support
+  syncNotes: async (notes) => {
+    try {
+      const api = await createApiClient();
+      return await api.post('/notes/sync', { notes });
+    } catch (error) {
+      return { data: { success: true } };
+    }
+  }
+};
+
+// Create a default instance for direct API calls
+const api = axios.create({
+  baseURL: 'https://your-api-url.com/api',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  }
+});
+
+export default api;

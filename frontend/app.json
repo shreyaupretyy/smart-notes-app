@@ -4,28 +4,30 @@
     "slug": "smart-notes-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shreyaupretyy.smartnotesapp"
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+      "package": "com.shreyaupretyy.smartnotesapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "sdkVersion": "53.0.0"
+    "sdkVersion": "53.0.0",
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to add images to your notes.",
+          "cameraPermission": "The app needs access to your camera to take photos for your notes."
+        }
+      ]
+    ],
+    "owner": "shreyaupretyy"
   }
 }

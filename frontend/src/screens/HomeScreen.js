@@ -1,109 +1,117 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { StyleSheet, View, FlatList, RefreshControl } from 'react-native';
-import { Text, FAB, Searchbar, ActivityIndicator } from 'react-native-paper';
-import { NotesContext } from '../contexts/NotesContext';
+import React, { useEffect } from 'react';
+import { View, StyleSheet, FlatList } from 'react-native';
+import { Appbar, FAB, Text, Chip, ActivityIndicator } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
+import { useNotes } from '../contexts/NoteContext';
 import NoteCard from '../components/NoteCard';
-import { apiClient } from '../api/apiClient';
+import NetInfo from '@react-native-community/netinfo';
 
-const HomeScreen = ({ navigation }) => {
-  const { notes, isLoading } = useContext(NotesContext);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredNotes, setFilteredNotes] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [apiHealth, setApiHealth] = useState(null);
-
+const HomeScreen = () => {
+  const navigation = useNavigation();
+  const { 
+    filteredNotes, 
+    isLoading, 
+    error, 
+    refreshNotes, 
+    isOnline, 
+    clearFilters,
+    searchQuery,
+    filterCategory,
+    categories,
+    setActiveNote
+  } = useNotes();
+  
+  // Load notes on component mount
   useEffect(() => {
-    // Filter notes based on search query
-    if (searchQuery.trim() === '') {
-      setFilteredNotes(notes);
-    } else {
-      const query = searchQuery.toLowerCase();
-      setFilteredNotes(
-        notes.filter(
-          (note) =>
-            note.title.toLowerCase().includes(query) ||
-            note.content.toLowerCase().includes(query)
-        )
-      );
-    }
-  }, [searchQuery, notes]);
-
-  // Check API health
-  useEffect(() => {
-    checkApiHealth();
+    refreshNotes();
   }, []);
-
-  const checkApiHealth = async () => {
-    try {
-      const response = await apiClient.checkHealth();
-      setApiHealth(response.status === 'healthy');
-    } catch (error) {
-      console.error('Failed to check API health:', error);
-      setApiHealth(false);
-    }
+  
+  // Handle note press
+  const handleNotePress = (note) => {
+    setActiveNote(note);
+    navigation.navigate('NoteEditor', { note });
   };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await checkApiHealth();
-    setRefreshing(false);
+  
+  // Create new note
+  const handleNewNote = () => {
+    navigation.navigate('NoteEditor');
   };
-
-  if (isLoading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  const renderItem = ({ item }) => (
-    <NoteCard
-      note={item}
-      onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
-    />
-  );
-
+  
+  // Get category name by ID
+  const getCategoryName = (categoryId) => {
+    if (!categoryId) return null;
+    const category = categories.find(cat => cat.id === categoryId);
+    return category ? category.name : null;
+  };
+  
+  // Main render
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.title}>Smart Notes</Text>
-        {apiHealth !== null && (
-          <View style={[styles.statusDot, { backgroundColor: apiHealth ? '#4CAF50' : '#F44336' }]} />
-        )}
-      </View>
+      <Appbar.Header>
+        <Appbar.Content title="Smart Notes" />
+        {!isOnline && <Appbar.Action icon="wifi-off" />}
+        <Appbar.Action icon="refresh" onPress={refreshNotes} disabled={isLoading} />
+      </Appbar.Header>
       
-      <Searchbar
-        placeholder="Search notes..."
-        onChangeText={setSearchQuery}
-        value={searchQuery}
-        style={styles.searchBar}
-      />
-      
-      {filteredNotes.length > 0 ? (
-        <FlatList
-          data={filteredNotes}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          {searchQuery.trim() !== '' ? (
-            <Text variant="bodyLarge">No notes match your search.</Text>
-          ) : (
-            <Text variant="bodyLarge">No notes yet. Create your first note!</Text>
-          )}
+      {/* Active filters display */}
+      {(searchQuery || filterCategory) && (
+        <View style={styles.filtersContainer}>
+          <Text style={styles.filtersLabel}>Active filters:</Text>
+          <View style={styles.chipContainer}>
+            {searchQuery && (
+              <Chip 
+                style={styles.chip} 
+                onClose={() => clearFilters()}
+                icon="magnify"
+              >
+                "{searchQuery}"
+              </Chip>
+            )}
+            
+            {filterCategory && (
+              <Chip 
+                style={styles.chip} 
+                onClose={() => clearFilters()}
+                icon="tag"
+              >
+                {getCategoryName(filterCategory)}
+              </Chip>
+            )}
+          </View>
         </View>
       )}
       
+      {/* Notes list */}
+      {isLoading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#6200ee" />
+        </View>
+      ) : error ? (
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : filteredNotes.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyText}>No notes found</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredNotes}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <NoteCard note={item} onPress={handleNotePress} />
+          )}
+          contentContainerStyle={styles.listContent}
+          refreshing={isLoading}
+          onRefresh={refreshNotes}
+        />
+      )}
+      
+      {/* Floating Action Button */}
       <FAB
         style={styles.fab}
         icon="plus"
-        onPress={() => navigation.navigate('CreateNote')}
+        onPress={handleNewNote}
       />
     </View>
   );
@@ -114,36 +122,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-  },
-  title: {
-    fontWeight: 'bold',
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  searchBar: {
-    margin: 16,
-    elevation: 2,
-    borderRadius: 8,
-  },
-  centered: {
+  centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
-  list: {
+  listContent: {
     padding: 16,
-    paddingTop: 0,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: 'red',
+    textAlign: 'center',
   },
   fab: {
     position: 'absolute',
@@ -152,11 +148,23 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#6200ee',
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  filtersContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 8,
+    backgroundColor: '#eee',
+  },
+  filtersLabel: {
+    marginRight: 8,
+    fontSize: 14,
+    color: '#555',
+  },
+  chipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  chip: {
+    margin: 4,
   },
 });
 

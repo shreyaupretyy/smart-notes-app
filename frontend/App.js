@@ -1,37 +1,48 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
 import { Provider as PaperProvider } from 'react-native-paper';
+import AppNavigator from './src/navigation/AppNavigator';
+import { NoteProvider } from './src/contexts/NoteContext';
+import * as SplashScreen from 'expo-splash-screen';
 
-// Screens
-import HomeScreen from './src/screens/HomeScreen';
-import CreateNoteScreen from './src/screens/CreateNoteScreen';
-import NoteDetailScreen from './src/screens/NoteDetailScreen';
-
-// Context
-import { NotesProvider } from './src/contexts/NotesContext';
-
-const Stack = createStackNavigator();
+// Keep the splash screen visible until the app is ready
+SplashScreen.preventAutoHideAsync();
 
 export default function App() {
+  const [appIsReady, setAppIsReady] = React.useState(false);
+
+  React.useEffect(() => {
+    async function prepare() {
+      try {
+        // Perform any pre-loading tasks here
+        // For example: load fonts, initialize storage, etc.
+        
+        // Artificial delay to show splash screen
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        // Tell the application to render
+        setAppIsReady(true);
+        await SplashScreen.hideAsync();
+      }
+    }
+
+    prepare();
+  }, []);
+
+  if (!appIsReady) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <PaperProvider>
-        <NotesProvider>
-          <NavigationContainer>
-            <Stack.Navigator 
-              initialRouteName="Home"
-              screenOptions={{ headerShown: false }}
-            >
-              <Stack.Screen name="Home" component={HomeScreen} />
-              <Stack.Screen name="CreateNote" component={CreateNoteScreen} />
-              <Stack.Screen name="NoteDetail" component={NoteDetailScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
+        <NoteProvider>
+          <AppNavigator />
           <StatusBar style="auto" />
-        </NotesProvider>
+        </NoteProvider>
       </PaperProvider>
     </SafeAreaProvider>
   );
