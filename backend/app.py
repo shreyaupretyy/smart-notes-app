@@ -7,9 +7,11 @@ import json
 import os
 import torch
 
-# Import AI services
+# Add new AI service imports
 from services.summarizer import Summarizer
 from services.nlp_processor import NLPProcessor
+from services.image_to_text import ImageToText
+from services.speech_to_text import SpeechToText
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -53,54 +55,29 @@ class Note(db.Model):
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize AI services
-def initialize_ai_services():
-    """Initialize AI services"""
-    global summarizer, nlp_processor
-    print("🤖 Initializing AI services...")
-    try:
-        summarizer = Summarizer()
-        nlp_processor = NLPProcessor()
-        print("✅ AI services initialized successfully")
-        return True
-    except Exception as e:
-        print(f"❌ Error initializing AI services: {e}")
-        summarizer = None
-        nlp_processor = None
-        return False
-
-def process_text_with_ai(text):
-    """Process text with AI services"""
-    try:
-        # Generate summary
-        if summarizer:
-            summary = summarizer.summarize(text)
-        else:
-            summary = text[:100] + "..." if len(text) > 100 else text
-        
-        # Extract keywords and sentiment
-        if nlp_processor:
-            keywords, sentiment = nlp_processor.process_text(text)
-            statistics = nlp_processor.get_text_statistics(text)
-        else:
-            keywords = ["placeholder", "keywords"]
-            sentiment = "neutral"
-            statistics = {}
-        
-        return summary, keywords, sentiment, statistics
-        
-    except Exception as e:
-        print(f"AI processing error: {e}")
-        # Fallback processing
-        summary = text[:100] + "..." if len(text) > 100 else text
-        keywords = ["error", "fallback"]
-        sentiment = "neutral"
-        statistics = {}
-        return summary, keywords, sentiment, statistics
-
-# Create database tables and initialize AI
-with app.app_context():
-    db.create_all()
-    ai_initialized = initialize_ai_services()
+print("🤖 Initializing AI services...")
+try:
+    # Existing services
+    summarizer = Summarizer()
+    nlp_processor = NLPProcessor()
+    
+    # New services
+    print("🖼️ Initializing Image-to-Text service...")
+    image_to_text = ImageToText()
+    
+    print("🎤 Initializing Speech-to-Text service...")
+    speech_to_text = SpeechToText()
+    
+    ai_initialized = True
+    print("✅ All AI services initialized successfully")
+    
+except Exception as e:
+    print(f"❌ AI services initialization failed: {e}")
+    summarizer = None
+    nlp_processor = None
+    image_to_text = None
+    speech_to_text = None
+    ai_initialized = False
 
 # Routes
 @app.route('/')
