@@ -1,1 +1,0 @@
-// This file includes utility functions that can be used throughout the frontend application.
