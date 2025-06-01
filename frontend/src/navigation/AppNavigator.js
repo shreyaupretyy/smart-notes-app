@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// Import screens (we'll create these next)
+// Import screens
 import NotesListScreen from '../screens/NotesListScreen';
 import CreateNoteScreen from '../screens/CreateNoteScreen';
 import NoteDetailScreen from '../screens/NoteDetailScreen';
@@ -33,6 +33,24 @@ function NotesStack() {
         name="NoteDetail" 
         component={NoteDetailScreen}
         options={{ title: 'Note Details' }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// AI Features Stack Navigator (add CreateNote here too)
+function AIFeaturesStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen 
+        name="AIFeaturesList" 
+        component={AIFeaturesScreen}
+        options={{ title: 'AI Tools' }}
+      />
+      <Stack.Screen 
+        name="CreateNote" 
+        component={CreateNoteScreen}
+        options={{ title: 'New Note' }}
       />
     </Stack.Navigator>
   );
@@ -68,8 +86,8 @@ export default function AppNavigator() {
         />
         <Tab.Screen 
           name="AI Features" 
-          component={AIFeaturesScreen}
-          options={{ title: 'AI Tools' }}
+          component={AIFeaturesStack}  // ✅ Changed to stack
+          options={{ headerShown: false }}
         />
         <Tab.Screen 
           name="Settings" 

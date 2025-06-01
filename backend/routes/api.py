@@ -5,7 +5,7 @@ from database import db
 import json
 
 # Create blueprint for notes API
-notes_bp = Blueprint('notes', __name__, url_prefix='/api/notes')
+notes_bp = Blueprint('notes', __name__, url_prefix='/api')
 
 def get_ai_services():
     """Get AI services at runtime to avoid circular imports"""
@@ -14,8 +14,13 @@ def get_ai_services():
         return process_text_with_ai, image_to_text, speech_to_text
     except ImportError:
         return None, None, None
+    
+# routes/api.py - Add this test route at the top
+@notes_bp.route('/test', methods=['GET'])
+def test_route():
+    return jsonify({'message': 'Blueprint is working!', 'status': 'success'})
 
-@notes_bp.route('/', methods=['GET'])
+@notes_bp.route('/notes', methods=['GET'])
 def get_all_notes():
     """Get all notes with optional filtering"""
     try:
@@ -50,9 +55,142 @@ def get_all_notes():
             'message': str(e)
         }), 500
 
-@notes_bp.route('/', methods=['POST'])
+# backend/routes/api.py - Optimize create_note function
+@notes_bp.route('/notes', methods=['POST'])
 def create_note():
-    """Create a new note with AI processing"""
+    """Create a new note with optimized AI processing"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'title' not in data or 'content' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Title and content are required'
+            }), 400
+
+        print(f"📝 Creating note: {data['title']}")
+
+        # Create note in database FIRST (fast)
+        from database import get_db
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO notes (title, content, category, ai_processed, created_at, updated_at)
+            VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ''', (data['title'], data['content'], data.get('category')))
+        
+        note_id = cursor.lastrowid
+        conn.commit()
+        
+        print(f"✅ Note {note_id} created in database")
+
+        # Process with AI asynchronously (slower)
+        try:
+            # Quick timeout for AI processing
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("AI processing timeout")
+            
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(10)  # 10 second timeout
+            
+            # Get AI services
+            from app import process_text_with_ai
+            if process_text_with_ai:
+                print("🤖 Processing with AI...")
+                summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
+                
+                # Update with AI results
+                cursor.execute('''
+                    UPDATE notes 
+                    SET ai_processed = TRUE, summary = ?, sentiment = ?, keywords = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (summary, sentiment, json.dumps(keywords), note_id))
+                conn.commit()
+                print(f"🎯 AI processing completed for note {note_id}")
+            
+            signal.alarm(0)  # Cancel timeout
+            
+        except (TimeoutError, Exception) as ai_error:
+            print(f"⚠️ AI processing failed/timeout: {ai_error}")
+            # Note is still saved, just without AI processing
+        
+        # Get the final note data
+        cursor.execute('''
+            SELECT id, title, content, category, created_at, updated_at,
+                   ai_processed, summary, sentiment, keywords
+            FROM notes WHERE id = ?
+        ''', (note_id,))
+        
+        note_data = cursor.fetchone()
+        
+        note = {
+            'id': note_data[0],
+            'title': note_data[1],
+            'content': note_data[2],
+            'category': note_data[3],
+            'created_at': note_data[4],
+            'updated_at': note_data[5],
+            'ai_processed': bool(note_data[6]),
+            'summary': note_data[7],
+            'sentiment': note_data[8],
+            'keywords': json.loads(note_data[9]) if note_data[9] else [],
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Note created successfully',
+            'note': note
+        }), 201
+        
+    except Exception as e:
+        print(f"❌ Error creating note: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# routes/api.py - Add debugging to get_note function
+@notes_bp.route('/notes/<int:note_id>', methods=['GET'])
+def get_note(note_id):
+    """Get a specific note by ID"""
+    try:
+        print(f"🔍 Looking for note with ID: {note_id}")
+        
+        # Check if note exists
+        note = Note.query.filter_by(id=note_id).first()
+        
+        if not note:
+            print(f"❌ Note {note_id} not found in database")
+            # Let's see what notes DO exist
+            all_notes = Note.query.all()
+            print(f"📋 Available notes: {[n.id for n in all_notes]}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Note {note_id} not found',
+                'available_notes': [n.id for n in all_notes]
+            }), 404
+        
+        print(f"✅ Found note {note_id}: {note.title}")
+        
+        return jsonify({
+            'status': 'success',
+            'note': note.to_dict()
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting note {note_id}: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# routes/api.py - Add/fix the PUT route
+@notes_bp.route('/notes/<int:note_id>', methods=['PUT'])
+def update_note(note_id):
+    """Update an existing note using raw SQLite"""
     try:
         data = request.get_json()
         
@@ -62,139 +200,129 @@ def create_note():
                 'message': 'Title and content are required'
             }), 400
         
-        # Create note
-        note = Note(
-            title=data['title'],
-            content=data['content'],
-            category=data.get('category')
-        )
+        print(f"✏️ Updating note {note_id}: {data['title']}")
         
-        # Add tags if provided
-        if 'tags' in data:
-            note.set_tags(data['tags'])
+        # Use raw SQLite
+        from database import get_db
+        conn = get_db()
+        cursor = conn.cursor()
         
-        # Process with AI
-        try:
-            process_text_with_ai, _, _ = get_ai_services()
-            if process_text_with_ai:
-                summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
-                
-                note.summary = summary
-                note.set_keywords(keywords)
-                note.sentiment = sentiment
-                note.ai_processed = True
-            else:
-                note.ai_processed = False
-                
-        except Exception as ai_error:
-            print(f"⚠️ AI processing failed: {ai_error}")
-            note.ai_processed = False
-        
-        # Save to database
-        db.session.add(note)
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Note created successfully',
-            'note': note.to_dict()
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@notes_bp.route('/<int:note_id>', methods=['GET'])
-def get_note(note_id):
-    """Get a specific note by ID"""
-    try:
-        note = Note.query.get_or_404(note_id)
-        return jsonify({
-            'status': 'success',
-            'note': note.to_dict()
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 404
-
-@notes_bp.route('/<int:note_id>', methods=['PUT'])
-def update_note(note_id):
-    """Update an existing note"""
-    try:
-        note = Note.query.get_or_404(note_id)
-        data = request.get_json()
-        
-        if not data:
+        # Check if note exists
+        cursor.execute('SELECT id FROM notes WHERE id = ?', (note_id,))
+        if not cursor.fetchone():
             return jsonify({
                 'status': 'error',
-                'message': 'No data provided'
-            }), 400
+                'message': 'Note not found'
+            }), 404
         
-        # Update fields
-        if 'title' in data:
-            note.title = data['title']
-        if 'content' in data:
-            note.content = data['content']
-            
-            # Re-process with AI if content changed
-            try:
-                process_text_with_ai, _, _ = get_ai_services()
-                if process_text_with_ai:
-                    summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
-                    note.summary = summary
-                    note.set_keywords(keywords)
-                    note.sentiment = sentiment
-                    note.ai_processed = True
-            except Exception as ai_error:
-                print(f"⚠️ AI re-processing failed: {ai_error}")
+        # Update note
+        cursor.execute('''
+            UPDATE notes 
+            SET title = ?, content = ?, category = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data['title'], data['content'], data.get('category'), note_id))
         
-        if 'category' in data:
-            note.category = data['category']
-        if 'tags' in data:
-            note.set_tags(data['tags'])
+        conn.commit()
         
-        db.session.commit()
+        # Process with AI if needed (optional, for speed)
+        try:
+            from app import process_text_with_ai
+            if process_text_with_ai:
+                summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
+                cursor.execute('''
+                    UPDATE notes 
+                    SET ai_processed = TRUE, summary = ?, sentiment = ?, keywords = ?
+                    WHERE id = ?
+                ''', (summary, sentiment, json.dumps(keywords), note_id))
+                conn.commit()
+        except Exception as ai_error:
+            print(f"⚠️ AI processing failed: {ai_error}")
+        
+        # Get updated note
+        cursor.execute('''
+            SELECT id, title, content, category, created_at, updated_at,
+                   ai_processed, summary, sentiment, keywords
+            FROM notes WHERE id = ?
+        ''', (note_id,))
+        
+        note_data = cursor.fetchone()
+        note = {
+            'id': note_data[0],
+            'title': note_data[1],
+            'content': note_data[2],
+            'category': note_data[3],
+            'created_at': note_data[4],
+            'updated_at': note_data[5],
+            'ai_processed': bool(note_data[6]),
+            'summary': note_data[7],
+            'sentiment': note_data[8],
+            'keywords': json.loads(note_data[9]) if note_data[9] else [],
+        }
         
         return jsonify({
             'status': 'success',
             'message': 'Note updated successfully',
-            'note': note.to_dict()
+            'note': note
         })
         
     except Exception as e:
-        db.session.rollback()
+        print(f"❌ Error updating note {note_id}: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
         }), 500
 
-@notes_bp.route('/<int:note_id>', methods=['DELETE'])
+# routes/api.py - Add the missing DELETE route
+@notes_bp.route('/notes/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):
-    """Delete a note"""
+    """Delete a note using raw SQLite"""
     try:
-        note = Note.query.get_or_404(note_id)
-        db.session.delete(note)
-        db.session.commit()
+        print(f"🗑️ Deleting note with ID: {note_id}")
         
-        return jsonify({
-            'status': 'success',
-            'message': 'Note deleted successfully'
-        })
+        # Use raw SQLite to match your other routes
+        from database import get_db
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Check if note exists first
+        cursor.execute('SELECT id, title FROM notes WHERE id = ?', (note_id,))
+        note_data = cursor.fetchone()
+        
+        if not note_data:
+            print(f"❌ Note {note_id} not found for deletion")
+            return jsonify({
+                'status': 'error',
+                'message': f'Note {note_id} not found'
+            }), 404
+        
+        print(f"✅ Found note to delete: {note_data[1]}")
+        
+        # Delete the note
+        cursor.execute('DELETE FROM notes WHERE id = ?', (note_id,))
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        if rows_affected > 0:
+            print(f"✅ Note {note_id} deleted successfully")
+            return jsonify({
+                'status': 'success',
+                'message': 'Note deleted successfully'
+            })
+        else:
+            print(f"❌ No rows affected when deleting note {note_id}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to delete note'
+            }), 500
         
     except Exception as e:
-        db.session.rollback()
+        print(f"❌ Error deleting note {note_id}: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
         }), 500
 
-@notes_bp.route('/<int:note_id>/add-image', methods=['POST'])
+@notes_bp.route('/notes/<int:note_id>/add-image', methods=['POST'])
 def add_image_to_note(note_id):
     """Add image and extract text"""
     try:
@@ -243,7 +371,7 @@ def add_image_to_note(note_id):
             'message': str(e)
         }), 500
 
-@notes_bp.route('/<int:note_id>/add-audio', methods=['POST'])
+@notes_bp.route('/notes/<int:note_id>/add-audio', methods=['POST'])
 def add_audio_to_note(note_id):
     """Add audio and transcribe to text"""
     try:
@@ -292,7 +420,7 @@ def add_audio_to_note(note_id):
             'message': str(e)
         }), 500
 
-@notes_bp.route('/categories', methods=['GET'])
+@notes_bp.route('/notes/categories', methods=['GET'])
 def get_categories():
     """Get all unique categories"""
     try:
@@ -310,7 +438,7 @@ def get_categories():
             'message': str(e)
         }), 500
 
-@notes_bp.route('/stats', methods=['GET'])
+@notes_bp.route('/notes/stats', methods=['GET'])
 def get_stats():
     """Get notes statistics"""
     try:

@@ -130,13 +130,22 @@ class APIService {
 
     this.api.interceptors.response.use(
       (response) => {
-        console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+        const fullUrl = `${response.config.baseURL}${response.config.url}`;
+        console.log(`✅ API Response: ${response.status} ${fullUrl}`);
         return response;
       },
       (error) => {
         const status = error.response?.status;
         const message = error.response?.data?.message || error.message;
-        console.error(`❌ API Error: ${status} - ${message}`);
+        const fullUrl = error.config ? `${error.config.baseURL}${error.config.url}` : 'unknown';
+        
+        // ✅ Don't log 404 errors as errors (they're expected for deleted notes)
+        if (status === 404) {
+          console.log(`📋 Resource not found: ${fullUrl}`);
+        } else {
+          console.error(`❌ API Error: ${status} - ${message} (${fullUrl})`);
+        }
+        
         return Promise.reject(error);
       }
     );
@@ -205,7 +214,8 @@ class APIService {
     return this.api.post('/ai/summarize', { text });
   };
 
-  analyzeText = (text) => {
+  analyzeText = async (text) => {
+    console.log('🤖 Analyzing text for preview...');
     this.ensureInitialized();
     return this.api.post('/ai/analyze', { text });
   };

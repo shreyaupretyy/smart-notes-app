@@ -1,90 +1,96 @@
 // src/screens/CreateNoteScreen.js
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
   Alert,
   KeyboardAvoidingView,
-  Platform 
+  Platform,
+  ScrollView,
 } from 'react-native';
-import { 
-  TextInput, 
-  Button, 
-  Card, 
-  ActivityIndicator,
-  Text,
-  Chip,
-  ProgressBar 
-} from 'react-native-paper';
+import { Button, Card, Chip, ActivityIndicator, Switch } from 'react-native-paper';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
+import { useAIPreview } from '../hooks/useAIPreview'; // ✅ Import the new hook
 
 export default function CreateNoteScreen({ route, navigation }) {
-  const { editNote } = route.params || {};
-  const isEditing = !!editNote;
-  
-  const [title, setTitle] = useState(editNote?.title || '');
-  const [content, setContent] = useState(editNote?.content || '');
-  const [category, setCategory] = useState(editNote?.category || '');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [aiPreview, setAiPreview] = useState(null);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [category, setCategory] = useState('');
+  const [aiPreviewEnabled, setAiPreviewEnabled] = useState(true); // ✅ Toggle for AI preview
 
   const queryClient = useQueryClient();
 
+  // Get edit data if editing
+  const editNote = route.params?.editNote;
+  const isEditing = !!editNote;
+
+  // ✅ Use the AI preview hook
+  const { aiPreview, isAnalyzing } = useAIPreview(content, aiPreviewEnabled);
+
+  // Set initial values if editing
+  useEffect(() => {
+    if (isEditing && editNote) {
+      setTitle(editNote.title || '');
+      setContent(editNote.content || '');
+      setCategory(editNote.category || '');
+    }
+  }, [isEditing, editNote]);
+
+  // Create mutation
   const createMutation = useMutation({
-    mutationFn: (noteData) => apiService.createNote(noteData),
+    mutationFn: apiService.createNote,
     onSuccess: () => {
       queryClient.invalidateQueries(['notes']);
-      navigation.goBack();
+      Alert.alert('Success', 'Note created successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Notes', { screen: 'NotesList' });
+            }
+          }
+        }
+      ]);
     },
     onError: (error) => {
-      Alert.alert('Error', 'Failed to create note');
-    },
+      console.error('❌ Error creating note:', error);
+      Alert.alert('Error', 'Failed to create note. Please try again.');
+    }
   });
 
+  // Update mutation
   const updateMutation = useMutation({
-    mutationFn: (noteData) => apiService.updateNote(editNote.id, noteData),
+    mutationFn: ({ id, ...data }) => apiService.updateNote(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['notes']);
       queryClient.invalidateQueries(['note', editNote.id]);
-      navigation.goBack();
+      Alert.alert('Success', 'Note updated successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Notes', { screen: 'NotesList' });
+            }
+          }
+        }
+      ]);
     },
     onError: (error) => {
-      Alert.alert('Error', 'Failed to update note');
-    },
+      console.error('❌ Error updating note:', error);
+      Alert.alert('Error', 'Failed to update note. Please try again.');
+    }
   });
 
-  // Real-time AI preview (debounced)
-  useEffect(() => {
-    if (content.length > 50) {
-      const timer = setTimeout(async () => {
-        setIsProcessing(true);
-        try {
-          const [summaryRes, analysisRes] = await Promise.all([
-            apiService.summarizeText(content),
-            apiService.analyzeText(content),
-          ]);
-          
-          setAiPreview({
-            summary: summaryRes.data.summary,
-            sentiment: analysisRes.data.sentiment,
-            keywords: analysisRes.data.keywords,
-          });
-        } catch (error) {
-          console.log('AI preview error:', error);
-        } finally {
-          setIsProcessing(false);
-        }
-      }, 2000); // 2-second delay
-
-      return () => clearTimeout(timer);
-    }
-  }, [content]);
-
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim() || !content.trim()) {
-      Alert.alert('Error', 'Please fill in title and content');
+      Alert.alert('Error', 'Please enter both title and content');
       return;
     }
 
@@ -94,139 +100,193 @@ export default function CreateNoteScreen({ route, navigation }) {
       category: category.trim() || undefined,
     };
 
-    if (isEditing) {
-      updateMutation.mutate(noteData);
-    } else {
-      createMutation.mutate(noteData);
+    console.log('💾 Saving note...', { title: noteData.title });
+
+    try {
+      if (isEditing) {
+        await updateMutation.mutateAsync({
+          id: editNote.id,
+          ...noteData,
+        });
+      } else {
+        await createMutation.mutateAsync(noteData);
+      }
+    } catch (error) {
+      console.error('❌ Save error:', error);
     }
   };
 
-  const isLoading = createMutation.isLoading || updateMutation.isLoading;
+  const handleCancel = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Notes', { screen: 'NotesList' });
+    }
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  // ✅ Helper function for sentiment colors
+  const getSentimentColor = (sentiment) => {
+    switch (sentiment) {
+      case 'positive': return '#4caf50';
+      case 'negative': return '#f44336';
+      default: return '#9e9e9e';
+    }
+  };
 
   return (
     <KeyboardAvoidingView 
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <ScrollView style={styles.scrollView}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <TextInput
-              label="Note Title"
-              value={title}
-              onChangeText={setTitle}
-              mode="outlined"
-              style={styles.input}
-              placeholder="Enter a descriptive title..."
-            />
+      <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+        <View style={styles.formContainer}>
+          <Text style={styles.label}>Title *</Text>
+          <TextInput
+            style={styles.titleInput}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Enter note title..."
+            maxLength={100}
+            editable={!isSaving}
+          />
 
-            <TextInput
-              label="Category (Optional)"
-              value={category}
-              onChangeText={setCategory}
-              mode="outlined"
-              style={styles.input}
-              placeholder="e.g., Work, Personal, Ideas..."
-            />
+          <Text style={styles.label}>Category</Text>
+          <TextInput
+            style={styles.categoryInput}
+            value={category}
+            onChangeText={setCategory}
+            placeholder="Enter category (optional)..."
+            maxLength={50}
+            editable={!isSaving}
+          />
 
+          <View style={styles.contentSection}>
+            <View style={styles.contentHeader}>
+              <Text style={styles.label}>Content *</Text>
+              <View style={styles.aiToggle}>
+                <Text style={styles.aiToggleLabel}>AI Preview</Text>
+                <Switch
+                  value={aiPreviewEnabled}
+                  onValueChange={setAiPreviewEnabled}
+                  disabled={isSaving}
+                />
+              </View>
+            </View>
+            
             <TextInput
-              label="Note Content"
+              style={styles.contentInput}
               value={content}
               onChangeText={setContent}
-              mode="outlined"
+              placeholder="Enter your note content..."
               multiline
-              numberOfLines={10}
-              style={styles.contentInput}
-              placeholder="Start writing your note... AI will analyze it automatically!"
+              textAlignVertical="top"
+              editable={!isSaving}
             />
-          </Card.Content>
-        </Card>
+          </View>
 
-        {/* AI Preview Card */}
-        {(isProcessing || aiPreview) && (
-          <Card style={styles.aiCard}>
-            <Card.Content>
-              <Text style={styles.aiTitle}>🤖 AI Analysis Preview</Text>
-              
-              {isProcessing && (
-                <View style={styles.processingContainer}>
-                  <ProgressBar indeterminate color="#6366f1" />
-                  <Text style={styles.processingText}>Analyzing with AI...</Text>
+          {/* ✅ AI Preview Card */}
+          {aiPreviewEnabled && (content.length >= 50 || isAnalyzing || aiPreview) && (
+            <Card style={styles.aiPreviewCard}>
+              <Card.Content>
+                <View style={styles.aiPreviewHeader}>
+                  <Text style={styles.aiPreviewTitle}>🤖 AI Preview</Text>
+                  {isAnalyzing && <ActivityIndicator size="small" />}
                 </View>
-              )}
 
-              {aiPreview && !isProcessing && (
-                <View>
-                  {aiPreview.summary && (
-                    <View style={styles.previewSection}>
-                      <Text style={styles.previewLabel}>Summary:</Text>
-                      <Text style={styles.previewContent}>{aiPreview.summary}</Text>
-                    </View>
-                  )}
+                {content.length < 50 && !isAnalyzing && (
+                  <Text style={styles.aiHint}>
+                    Type at least 50 characters to see AI analysis...
+                  </Text>
+                )}
 
-                  {aiPreview.sentiment && (
-                    <View style={styles.previewSection}>
-                      <Text style={styles.previewLabel}>Sentiment:</Text>
-                      <Chip 
-                        style={[styles.sentimentChip, { 
-                          backgroundColor: getSentimentColor(aiPreview.sentiment) 
-                        }]}
-                        textStyle={{ color: 'white' }}
-                      >
-                        {aiPreview.sentiment}
-                      </Chip>
-                    </View>
-                  )}
+                {isAnalyzing && (
+                  <Text style={styles.aiAnalyzing}>
+                    Analyzing your content...
+                  </Text>
+                )}
 
-                  {aiPreview.keywords && aiPreview.keywords.length > 0 && (
-                    <View style={styles.previewSection}>
-                      <Text style={styles.previewLabel}>Keywords:</Text>
-                      <View style={styles.keywordsContainer}>
-                        {aiPreview.keywords.slice(0, 5).map((keyword, index) => (
-                          <Chip key={index} style={styles.keywordChip}>
-                            {keyword}
-                          </Chip>
-                        ))}
+                {aiPreview && !isAnalyzing && (
+                  <View style={styles.aiResults}>
+                    {aiPreview.analysis?.summary && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Summary:</Text>
+                        <Text style={styles.aiSectionContent}>
+                          {aiPreview.analysis.summary}
+                        </Text>
                       </View>
-                    </View>
-                  )}
-                </View>
-              )}
-            </Card.Content>
-          </Card>
-        )}
+                    )}
+
+                    {aiPreview.analysis?.sentiment && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Sentiment:</Text>
+                        <Chip 
+                          style={[
+                            styles.sentimentChip, 
+                            { backgroundColor: getSentimentColor(aiPreview.analysis.sentiment) }
+                          ]}
+                          textStyle={{ color: 'white' }}
+                        >
+                          {aiPreview.analysis.sentiment}
+                        </Chip>
+                      </View>
+                    )}
+
+                    {aiPreview.analysis?.keywords && aiPreview.analysis.keywords.length > 0 && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Keywords:</Text>
+                        <View style={styles.keywordsContainer}>
+                          {aiPreview.analysis.keywords.slice(0, 5).map((keyword, index) => (
+                            <Chip key={index} style={styles.keywordChip} compact>
+                              {keyword}
+                            </Chip>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    <Text style={styles.aiNote}>
+                      💡 This is a preview. Final analysis will be saved with your note.
+                    </Text>
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+          )}
+        </View>
       </ScrollView>
 
-      <View style={styles.actions}>
+      {/* Fixed Action Bar */}
+      <View style={styles.actionBar}>
         <Button 
           mode="outlined" 
-          onPress={() => navigation.goBack()}
+          onPress={handleCancel}
           style={styles.cancelButton}
+          contentStyle={styles.buttonContent}
+          disabled={isSaving}
         >
           Cancel
         </Button>
         <Button 
           mode="contained" 
           onPress={handleSave}
-          loading={isLoading}
-          disabled={isLoading}
+          loading={isSaving}
+          disabled={isSaving}
           style={styles.saveButton}
-          icon="content-save"  // ✅ Better icon for save
+          contentStyle={styles.buttonContent}
+          icon="content-save"
         >
-          {isEditing ? 'Update' : 'Save'} Note
+          {isSaving 
+            ? (isEditing ? 'Updating...' : 'Saving...') 
+            : (isEditing ? 'Update' : 'Save')
+          } Note
         </Button>
       </View>
     </KeyboardAvoidingView>
   );
 }
-
-const getSentimentColor = (sentiment) => {
-  switch (sentiment) {
-    case 'positive': return '#4caf50';
-    case 'negative': return '#f44336';
-    default: return '#9e9e9e';
-  }
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -235,51 +295,106 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  formContainer: {
     padding: 16,
   },
-  card: {
-    marginBottom: 16,
-    elevation: 2,
-  },
-  input: {
-    marginBottom: 16,
-  },
-  contentInput: {
-    marginBottom: 16,
-    minHeight: 200,
-  },
-  aiCard: {
-    marginBottom: 16,
-    elevation: 2,
-    backgroundColor: '#f8f9ff',
-  },
-  aiTitle: {
+  label: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#6366f1',
+    marginBottom: 8,
+    color: '#333',
   },
-  processingContainer: {
+  titleInput: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
     marginBottom: 16,
   },
-  processingText: {
-    textAlign: 'center',
-    marginTop: 8,
-    color: '#6366f1',
+  categoryInput: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginBottom: 16,
   },
-  previewSection: {
+  contentSection: {
+    marginBottom: 16,
+  },
+  contentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  aiToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiToggleLabel: {
+    fontSize: 14,
+    color: '#6366f1',
+    fontWeight: '500',
+  },
+  contentInput: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    minHeight: 200,
+    maxHeight: 400,
+  },
+  // ✅ AI Preview Styles
+  aiPreviewCard: {
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1',
+  },
+  aiPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  previewLabel: {
+  aiPreviewTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#6366f1',
+  },
+  aiHint: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  aiAnalyzing: {
+    fontSize: 14,
+    color: '#6366f1',
+    fontStyle: 'italic',
+  },
+  aiResults: {
+    gap: 12,
+  },
+  aiSection: {
+    marginBottom: 8,
+  },
+  aiSectionTitle: {
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 4,
-    color: '#333',
+    color: '#6366f1',
   },
-  previewContent: {
+  aiSectionContent: {
     fontSize: 14,
+    color: '#333',
     lineHeight: 20,
-    color: '#666',
   },
   sentimentChip: {
     alignSelf: 'flex-start',
@@ -287,14 +402,24 @@ const styles = StyleSheet.create({
   keywordsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 6,
   },
   keywordChip: {
-    marginRight: 8,
-    marginBottom: 4,
+    marginRight: 0,
+    marginBottom: 0,
   },
-  actions: {
+  aiNote: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  actionBar: {
     flexDirection: 'row',
     padding: 16,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
     gap: 12,
   },
   cancelButton: {
@@ -302,5 +427,9 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 2,
+    backgroundColor: '#6366f1',
+  },
+  buttonContent: {
+    paddingVertical: 8,
   },
 });

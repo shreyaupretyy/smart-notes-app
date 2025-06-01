@@ -15,8 +15,21 @@ from services.nlp_processor import NLPProcessor
 from services.image_to_text import ImageToText
 from services.speech_to_text import SpeechToText
 
+from routes.api import notes_bp
+
 # Initialize Flask app
 app = Flask(__name__)
+
+# app.py - Add these lines after app = Flask(__name__)
+try:
+    from routes.api import notes_bp
+    app.register_blueprint(notes_bp)
+    print("✅ Notes blueprint registered successfully")
+except ImportError as e:
+    print(f"❌ Failed to import notes blueprint: {e}")
+except Exception as e:
+    print(f"❌ Failed to register notes blueprint: {e}")
+    
 app.config.from_object(Config)
 
 # Initialize database with app
@@ -25,16 +38,8 @@ db.init_app(app)
 # Initialize extensions
 CORS(app)
 
-# Import routes after app initialization to avoid circular imports
-from routes.api import notes_bp
 
-# Register blueprints
-app.register_blueprint(notes_bp)
 
-# Add debug logging
-@app.before_request
-def log_request_info():
-    print(f"📍 Request: {request.method} {request.url}")
 
 
 # Create upload directory
@@ -118,6 +123,8 @@ def home():
             'test': 'GET /api/ai/test to test AI services'
         }
     }
+
+
 
 @app.route('/api/health')
 def health_check():
@@ -251,46 +258,45 @@ def summarize_text():
 
 @app.route('/api/ai/analyze', methods=['POST'])
 def analyze_text():
-    """Analyze text endpoint - requires POST with JSON data"""
+    """Analyze text in real-time for preview"""
     try:
         data = request.get_json()
         
         if not data or 'text' not in data:
             return jsonify({
-                'status': 'error', 
-                'message': 'Text is required',
-                'usage': 'POST with {"text": "your text here"}'
+                'status': 'error',
+                'message': 'Text is required'
             }), 400
         
-        text_to_analyze = data['text']
+        text = data['text'].strip()
         
-        if not text_to_analyze.strip():
+        if len(text) < 50:
             return jsonify({
                 'status': 'error',
-                'message': 'Text cannot be empty'
+                'message': 'Text too short for analysis (minimum 50 characters)'
             }), 400
         
-        if nlp_processor:
-            keywords, sentiment = nlp_processor.process_text(text_to_analyze)
-            statistics = nlp_processor.get_text_statistics(text_to_analyze)
-        else:
-            keywords = ["service_unavailable"]
-            sentiment = "neutral"
-            statistics = {}
+        print(f"🤖 Analyzing text preview: {text[:100]}...")
+        
+        # Use existing AI functions
+        summary, keywords, sentiment, statistics = process_text_with_ai(text)
         
         return jsonify({
             'status': 'success',
             'analysis': {
-                'keywords': keywords,
+                'summary': summary,
+                'keywords': keywords[:10],  # Limit to top 10 keywords
                 'sentiment': sentiment,
-                'statistics': statistics
+                'statistics': statistics,
+                'preview': True  # Mark as preview
             }
         })
         
     except Exception as e:
+        print(f"❌ Error in AI analysis: {str(e)}")
         return jsonify({
-            'status': 'error', 
-            'message': str(e)
+            'status': 'error',
+            'message': 'AI analysis failed'
         }), 500
 
 # Combined AI processing endpoint
@@ -675,10 +681,6 @@ def get_gpu_info():
             'status': 'error',
             'message': str(e)
         }), 500
-
-# Replace the old placeholder image-to-text endpoint (remove the old one and keep this new one)
-# Also remove the old placeholder speech-to-text endpoint
-
 
 
 if __name__ == '__main__':

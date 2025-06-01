@@ -9,22 +9,35 @@ import {
   RefreshControl 
 } from 'react-native';
 import { FAB, Card, Chip, ActivityIndicator, Button } from 'react-native-paper';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function NotesListScreen({ navigation }) {
   const [connectionInfo, setConnectionInfo] = useState(null);
+  const queryClient = useQueryClient();
 
   const { 
     data: notesData, 
     isLoading, 
-    isError,
-    error,  // ✅ Add error object
+    isError, 
+    error,
     refetch 
   } = useQuery({
     queryKey: ['notes'],
-    queryFn: () => apiService.getNotes(),
+    queryFn: apiService.getNotes,
+    refetchOnFocus: true,
+    staleTime: 0, // ✅ Add this - always consider data stale
+    cacheTime: 0, // ✅ Add this - don't cache for too long
   });
+
+  // ✅ Add focus effect to force refresh when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🏠 NotesListScreen focused - refreshing data');
+      refetch();
+    }, [refetch])
+  );
 
   const notes = notesData?.data?.notes || [];
 
@@ -35,13 +48,28 @@ export default function NotesListScreen({ navigation }) {
     console.log('🔗 Connection Info:', info);
   }, []);
 
+  // ✅ Add debug logging to see when data changes
+  useEffect(() => {
+    console.log('🏠 NotesListScreen data updated:', {
+      isLoading,
+      isError,
+      error: error?.message,
+      notesData: notesData?.data,
+      notesCount: notes.length,
+      noteIds: notes.map(note => note.id),
+      noteDetails: notes.map(note => ({ id: note.id, title: note.title }))
+    });
+  }, [notesData, isLoading, isError, error, notes]);
+
   // ✅ Add debugging logs
   console.log('🏠 NotesListScreen Debug:', {
     isLoading,
     isError,
     error: error?.message,
     notesData: notesData?.data,
-    notesCount: notes.length
+    notesCount: notes.length,
+    noteIds: notes.map(note => note.id),  // ✅ Show actual IDs
+    noteDetails: notes.map(note => ({ id: note.id, title: note.title }))  // ✅ Show ID and title
   });
 
   const renderNote = ({ item }) => (
@@ -88,11 +116,28 @@ export default function NotesListScreen({ navigation }) {
     }
   };
 
+  const deleteMutation = useMutation({
+    mutationFn: apiService.deleteNote,
+    onMutate: () => {
+      // setIsProcessing(true); // ✅ Set processing state
+    },
+    onSuccess: () => {
+      // setIsProcessing(false);
+      queryClient.invalidateQueries(['notes']);
+    },
+    onError: () => {
+      // setIsProcessing(false);
+    }
+  });
+
+  // Use deleteMutation.isPending instead of isProcessing if available
+  // isProcessing = deleteMutation.isPending;
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" />
-        <Text>Loading your smart notes...</Text>
+        <Text>Loading notes...</Text>
       </View>
     );
   }
@@ -100,10 +145,13 @@ export default function NotesListScreen({ navigation }) {
   if (isError) {
     return (
       <View style={styles.centered}>
-        <Text>❌ Error loading notes</Text>
-        <TouchableOpacity onPress={refetch} style={styles.retryButton}>
-          <Text>Retry</Text>
-        </TouchableOpacity>
+        <Text style={styles.errorTitle}>❌ Error Loading Notes</Text>
+        <Text style={styles.errorText}>
+          {error?.message || 'Failed to load notes'}
+        </Text>
+        <Button onPress={refetch} mode="contained">
+          Try Again
+        </Button>
       </View>
     );
   }
@@ -129,14 +177,14 @@ export default function NotesListScreen({ navigation }) {
         data={notes}
         renderItem={renderNote}
         keyExtractor={(item) => item.id.toString()}
-        refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refetch} />
-        }
-        contentContainerStyle={styles.listContainer}
+        refreshing={isLoading} // ✅ Use both states
+        onRefresh={refetch}
         ListEmptyComponent={
-          <View style={styles.centered}>
+          <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No notes yet</Text>
-            <Text style={styles.emptySubtext}>Create your first AI-powered note!</Text>
+            <Text style={styles.emptySubtext}>
+              Tap the + button to create your first note
+            </Text>
           </View>
         }
       />
