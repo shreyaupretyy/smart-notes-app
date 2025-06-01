@@ -79,6 +79,38 @@ except Exception as e:
     speech_to_text = None
     ai_initialized = False
 
+# Add this helper function before the routes (after the AI services initialization)
+
+def process_text_with_ai(text):
+    """Process text with all available AI services"""
+    try:
+        # Summarization
+        if summarizer and summarizer.summarizer:
+            summary = summarizer.summarize(text)
+        else:
+            # Fallback summary
+            summary = text[:100] + "..." if len(text) > 100 else text
+        
+        # NLP Analysis
+        if nlp_processor:
+            keywords, sentiment = nlp_processor.process_text(text)
+            statistics = nlp_processor.get_text_statistics(text)
+        else:
+            keywords = []
+            sentiment = "neutral"
+            statistics = {"word_count": len(text.split())}
+        
+        return summary, keywords, sentiment, statistics
+        
+    except Exception as e:
+        print(f"❌ Error in AI processing: {e}")
+        # Return fallback values
+        summary = text[:100] + "..." if len(text) > 100 else text
+        keywords = []
+        sentiment = "neutral"
+        statistics = {"word_count": len(text.split())}
+        return summary, keywords, sentiment, statistics
+
 # Routes
 @app.route('/')
 def home():
@@ -459,77 +491,147 @@ def delete_note(note_id):
 
 # Image to text endpoint (placeholder for now)
 @app.route('/api/ai/image-to-text', methods=['POST'])
-def image_to_text():
+def process_image_to_text():
+    """Convert image to text using AI models"""
     try:
-        if 'image' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No image file provided'}), 400
+        if not image_to_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Image-to-text service not available'
+            }), 500
         
-        # Placeholder implementation
+        data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No image data provided'
+            }), 400
+        
+        image_data = data['image']
+        mode = data.get('mode', 'auto')  # auto, caption, ocr, document
+        
+        print(f"🖼️ Processing image with mode: {mode}")
+        result = image_to_text.process_image(image_data, mode)
+        
+        if 'error' in result:
+            return jsonify({
+                'status': 'error',
+                'message': result['error']
+            }), 500
+        
         return jsonify({
             'status': 'success',
-            'text': 'Image to text conversion - Coming soon!'
+            'result': result,
+            'mode': mode
         })
         
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
-# Speech to text endpoint (placeholder for now)
 @app.route('/api/ai/speech-to-text', methods=['POST'])
-def speech_to_text():
+def process_speech_to_text():
+    """Convert speech audio to text using AI models"""
     try:
-        if 'audio' not in request.files:
-            return jsonify({'status': 'error', 'message': 'No audio file provided'}), 400
+        if not speech_to_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Speech-to-text service not available'
+            }), 500
         
-        # Placeholder implementation
+        data = request.get_json()
+        if not data or 'audio' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No audio data provided'
+            }), 400
+        
+        audio_data = data['audio']
+        language = data.get('language', 'auto')
+        
+        print(f"🎤 Processing audio with language: {language}")
+        result = speech_to_text.transcribe_audio(audio_data, language)
+        
+        if 'error' in result:
+            return jsonify({
+                'status': 'error',
+                'message': result['error']
+            }), 500
+        
         return jsonify({
             'status': 'success',
-            'text': 'Speech to text conversion - Coming soon!'
+            'result': result,
+            'language': language
         })
         
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
-# Add these endpoints after the existing AI endpoints
-
-@app.route('/api/ai/test-nlp', methods=['GET'])
-def test_nlp_processor():
-    """Test NLP processor with sample text"""
-    test_texts = [
-        "I absolutely love this new technology! It's amazing and works perfectly.",
-        "This is terrible. I hate how complicated and frustrating this system is.",
-        "The weather today is sunny. It's a normal day with average temperature.",
-        "Machine learning and artificial intelligence are transforming the technology industry with innovative solutions."
-    ]
-    
+@app.route('/api/ai/test-image', methods=['GET'])
+def test_image_processing():
+    """Test image processing with sample images"""
     try:
-        results = []
+        if not image_to_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Image-to-text service not available'
+            }), 500
         
-        for i, text in enumerate(test_texts):
-            print(f"🧪 Testing NLP with text {i+1}")
-            
-            if nlp_processor:
-                keywords, sentiment = nlp_processor.process_text(text)
-                statistics = nlp_processor.get_text_statistics(text)
-                
-                results.append({
-                    'text': text,
-                    'keywords': keywords,
-                    'sentiment': sentiment,
-                    'statistics': statistics
-                })
-            else:
-                results.append({
-                    'text': text,
-                    'error': 'NLP processor not available'
-                })
+        from PIL import Image, ImageDraw, ImageFont
+        import base64
+        import io
+        
+        # Create test images
+        test_results = []
+        
+        # Test 1: Simple text image
+        img1 = Image.new('RGB', (300, 100), color='white')
+        draw1 = ImageDraw.Draw(img1)
+        try:
+            font = ImageFont.load_default()
+            draw1.text((10, 30), "Hello World! This is a test.", fill='black', font=font)
+        except:
+            draw1.text((10, 30), "Hello World! This is a test.", fill='black')
+        
+        # Convert to base64
+        buffer1 = io.BytesIO()
+        img1.save(buffer1, format='PNG')
+        img1_base64 = base64.b64encode(buffer1.getvalue()).decode()
+        
+        # Process image
+        result1 = image_to_text.process_image(img1_base64, 'auto')
+        test_results.append({
+            'test': 'simple_text',
+            'result': result1
+        })
+        
+        # Test 2: Colored background image  
+        img2 = Image.new('RGB', (250, 80), color='lightblue')
+        draw2 = ImageDraw.Draw(img2)
+        draw2.text((10, 25), "AI Image Processing", fill='darkblue')
+        
+        buffer2 = io.BytesIO()
+        img2.save(buffer2, format='PNG')
+        img2_base64 = base64.b64encode(buffer2.getvalue()).decode()
+        
+        result2 = image_to_text.process_image(img2_base64, 'ocr')
+        test_results.append({
+            'test': 'colored_background',
+            'result': result2
+        })
         
         # Get model info
-        model_info = nlp_processor.get_model_info() if nlp_processor else {'status': 'not_loaded'}
+        model_info = image_to_text.get_model_info()
         
         return jsonify({
             'status': 'success',
             'model_info': model_info,
-            'test_results': results
+            'test_results': test_results
         })
         
     except Exception as e:
@@ -538,39 +640,158 @@ def test_nlp_processor():
             'message': str(e)
         }), 500
 
-@app.route('/api/ai/benchmark-nlp', methods=['POST'])
-def benchmark_nlp():
-    """Benchmark NLP processing performance"""
+@app.route('/api/ai/test-speech', methods=['GET'])
+def test_speech_processing():
+    """Test speech processing capabilities"""
     try:
-        data = request.get_json()
-        test_text = data.get('text', 
-            "Artificial intelligence and machine learning are revolutionizing how we process and understand human language. "
-            "These technologies enable computers to analyze sentiment, extract keywords, and understand context in ways that were "
-            "previously impossible. The advancement of transformer models and CUDA acceleration has made real-time text processing "
-            "more efficient and accurate than ever before."
-        )
-        
-        if nlp_processor:
-            benchmark_results = nlp_processor.benchmark_nlp(test_text)
-            
-            return jsonify({
-                'status': 'success',
-                'benchmark': benchmark_results,
-                'input_text': test_text
-            })
-        else:
+        if not speech_to_text:
             return jsonify({
                 'status': 'error',
-                'message': 'NLP processor not available'
+                'message': 'Speech-to-text service not available'
             }), 500
-            
+        
+        # Get model info
+        model_info = speech_to_text.get_model_info()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Speech-to-text service ready',
+            'model_info': model_info,
+            'supported_formats': ['wav', 'mp3', 'ogg', 'flac'],
+            'note': 'Use /api/ai/speech-to-text endpoint with actual audio data'
+        })
+        
     except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e)
         }), 500
-    
-# Add this at the very end of app.py
+
+@app.route('/api/ai/benchmark-image', methods=['POST'])
+def benchmark_image_processing():
+    """Benchmark image processing performance"""
+    try:
+        if not image_to_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Image-to-text service not available'
+            }), 500
+        
+        data = request.get_json()
+        image_data = data.get('image')
+        
+        if not image_data:
+            # Create a default test image if none provided
+            from PIL import Image, ImageDraw
+            import base64
+            import io
+            
+            img = Image.new('RGB', (400, 200), color='white')
+            draw = ImageDraw.Draw(img)
+            draw.text((20, 50), "Performance Test Image", fill='black')
+            draw.text((20, 100), "This image tests AI processing speed", fill='black')
+            
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG')
+            image_data = base64.b64encode(buffer.getvalue()).decode()
+        
+        benchmark_result = image_to_text.benchmark_image_processing(image_data)
+        
+        return jsonify({
+            'status': 'success',
+            'benchmark': benchmark_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/ai/benchmark-speech', methods=['POST'])
+def benchmark_speech_processing():
+    """Benchmark speech processing performance"""
+    try:
+        if not speech_to_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Speech-to-text service not available'
+            }), 500
+        
+        data = request.get_json()
+        audio_data = data.get('audio')
+        
+        if not audio_data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Audio data required for benchmarking'
+            }), 400
+        
+        benchmark_result = speech_to_text.benchmark_speech_processing(audio_data)
+        
+        return jsonify({
+            'status': 'success',
+            'benchmark': benchmark_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# Update the existing GPU info endpoint to include new services
+@app.route('/api/ai/gpu-info', methods=['GET'])
+def get_gpu_info():
+    """Get GPU and AI services information"""
+    try:
+        gpu_info = {
+            'cuda_available': torch.cuda.is_available(),
+            'device_count': torch.cuda.device_count() if torch.cuda.is_available() else 0
+        }
+        
+        if torch.cuda.is_available():
+            gpu_info.update({
+                'gpu_name': torch.cuda.get_device_name(0),
+                'gpu_memory_total': f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB",
+                'gpu_memory_allocated': f"{torch.cuda.memory_allocated(0) / 1024**3:.2f} GB",
+                'gpu_memory_cached': f"{torch.cuda.memory_reserved(0) / 1024**3:.2f} GB"
+            })
+        
+        # AI Services status
+        services_status = {
+            'summarizer': {
+                'status': 'available' if summarizer else 'unavailable',
+                'info': summarizer.get_model_info() if summarizer else None
+            },
+            'nlp_processor': {
+                'status': 'available' if nlp_processor else 'unavailable',
+                'info': nlp_processor.get_model_info() if nlp_processor else None
+            },
+            'image_to_text': {
+                'status': 'available' if image_to_text else 'unavailable',
+                'info': image_to_text.get_model_info() if image_to_text else None
+            },
+            'speech_to_text': {
+                'status': 'available' if speech_to_text else 'unavailable',
+                'info': speech_to_text.get_model_info() if speech_to_text else None
+            }
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'gpu_info': gpu_info,
+            'ai_services': services_status
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# Replace the old placeholder image-to-text endpoint (remove the old one and keep this new one)
+# Also remove the old placeholder speech-to-text endpoint
 
 if __name__ == '__main__':
     try:
