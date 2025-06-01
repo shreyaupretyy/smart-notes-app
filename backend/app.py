@@ -5,6 +5,9 @@ from config import Config
 import json
 import os
 import torch
+import base64
+import io
+from PIL import Image
 
 # Import database instance
 from database import db
@@ -681,6 +684,140 @@ def get_gpu_info():
             'status': 'error',
             'message': str(e)
         }), 500
+
+@app.route('/api/ai/process-image', methods=['POST'])
+def api_process_image():
+    """Process image with OCR and analysis"""
+    try:
+        print("🖼️ Image processing endpoint hit!")
+        
+        data = request.get_json()
+        
+        if not data or 'image' not in data:
+            print("❌ No image data in request")
+            return jsonify({
+                'status': 'error',
+                'message': 'Image data is required'
+            }), 400
+        
+        print("🖼️ Processing image with AI...")
+        
+        # Get the base64 image data directly
+        image_base64 = data['image']
+        
+        # Validate base64 data
+        try:
+            test_decode = base64.b64decode(image_base64)
+            print(f"✅ Base64 image data validated: {len(test_decode)} bytes")
+        except Exception as decode_error:
+            print(f"❌ Invalid base64 data: {decode_error}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid image data format'
+            }), 400
+        
+        # Process with ImageToText service
+        extracted_text = ""
+        analysis = None
+        
+        try:
+            if image_to_text:
+                print("🔍 Processing image with ImageToText service...")
+                
+                # ✅ Use OCR mode specifically for text extraction
+                result = image_to_text.process_image(image_base64, 'auto')
+                print(f"🔍 Raw result: {result}")
+                
+                # ✅ Handle the correct response format from your ImageToText service
+                if isinstance(result, dict):
+                    if 'error' in result:
+                        print(f"❌ ImageToText service error: {result['error']}")
+                        extracted_text = "Image processing failed"
+                    else:
+                        # Try to get the best text extraction result
+                        # Priority: best_text > ocr_text > document_text > caption
+                        extracted_text = (
+                            result.get('best_text', '') or 
+                            result.get('ocr_text', '') or 
+                            result.get('document_text', '') or
+                            result.get('caption', '')
+                        )
+                        
+                        print(f"📝 Available results:")
+                        for key in ['best_text', 'ocr_text', 'document_text', 'caption']:
+                            if key in result:
+                                text = result[key]
+                                print(f"  - {key}: {text[:50]}{'...' if len(text) > 50 else ''}")
+                        
+                        print(f"📝 Selected text: {extracted_text[:100] if extracted_text else 'None'}...")
+                else:
+                    extracted_text = str(result)
+                    print(f"📝 Extracted text (string): {extracted_text[:100] if extracted_text else 'None'}...")
+                    
+            else:
+                print("⚠️ Image processing service not available")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Image processing service not available'
+                }), 503
+                
+        except Exception as ocr_error:
+            print(f"❌ OCR processing failed: {ocr_error}")
+            import traceback
+            traceback.print_exc()
+            extracted_text = "OCR processing encountered an error"
+        
+        # Clean up extracted text
+        if extracted_text:
+            # Remove common OCR artifacts and clean up
+            extracted_text = extracted_text.strip()
+            
+            # Skip if it's an error message or too short
+            if (len(extracted_text) < 3 or 
+                'error' in extracted_text.lower() or 
+                'not available' in extracted_text.lower() or
+                'not detected' in extracted_text.lower()):
+                extracted_text = ""
+        
+        # If we got meaningful text, analyze it with AI
+        if extracted_text and len(extracted_text.strip()) > 10:
+            try:
+                print("🤖 Analyzing extracted text...")
+                summary, keywords, sentiment, statistics = process_text_with_ai(extracted_text)
+                analysis = {
+                    'summary': summary,
+                    'keywords': keywords[:10] if keywords else [],
+                    'sentiment': sentiment,
+                    'statistics': statistics
+                }
+                print(f"✅ Text analysis complete: {sentiment} sentiment, {len(keywords) if keywords else 0} keywords")
+            except Exception as ai_error:
+                print(f"⚠️ Text analysis failed: {ai_error}")
+        
+        # Prepare final result
+        final_text = extracted_text or "No readable text found in image"
+        
+        result_data = {
+            'extracted_text': final_text,
+            'analysis': analysis,
+            'image_processed': True
+        }
+        
+        print("✅ Image processing completed successfully")
+        return jsonify({
+            'status': 'success',
+            'result': result_data
+        })
+        
+    except Exception as e:
+        print(f"❌ Error processing image: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Image processing failed: {str(e)}'
+        }), 500
+
 
 
 if __name__ == '__main__':

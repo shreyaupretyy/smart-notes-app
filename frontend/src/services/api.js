@@ -220,9 +220,16 @@ class APIService {
     return this.api.post('/ai/analyze', { text });
   };
 
-  processImage = (imageData, mode = 'auto') => {
+  processImage = async (base64ImageData) => {
+    console.log('🖼️ API: Processing image...');
     this.ensureInitialized();
-    return this.api.post('/ai/image-to-text', { image: imageData, mode });
+    
+    const response = await this.api.post('/ai/process-image', {
+      image: base64ImageData
+    });
+    
+    console.log('✅ API: Image processed successfully');
+    return response;
   };
 
   transcribeAudio = (audioData, language = 'auto') => {

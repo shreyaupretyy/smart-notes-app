@@ -1,8 +1,10 @@
 from flask import Blueprint, request, jsonify
 from models.note import Note
 from database import db
-# Import AI processing function at runtime to avoid circular imports
 import json
+import base64
+import io
+from PIL import Image
 
 # Create blueprint for notes API
 notes_bp = Blueprint('notes', __name__, url_prefix='/api')
@@ -462,3 +464,6 @@ def get_stats():
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+
