@@ -1,2 +1,24 @@
-venv/
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Database files
+*.db
+instance/
+
+# Environment files
 .env
+.env.local
+
+# Upload files
+uploads/*
+!uploads/.gitkeep
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

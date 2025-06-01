@@ -5,20 +5,46 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
-    TESTING = os.environ.get('TESTING', 'False').lower() == 'true'
+    # Database Configuration
+    # Priority: DATABASE_URL > Individual DB components > SQLite fallback
     
-    # Database
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///smartnotes.db'
+    if os.getenv('DATABASE_URL'):
+        # Use full database URL (for production/PostgreSQL)
+        SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL')
+    elif all([os.getenv('DB_HOST'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD')]):
+        # Use individual components (for PostgreSQL/MySQL)
+        DB_HOST = os.getenv('DB_HOST', 'localhost')
+        DB_PORT = os.getenv('DB_PORT', '5432')
+        DB_NAME = os.getenv('DB_NAME')
+        DB_USER = os.getenv('DB_USER')
+        DB_PASSWORD = os.getenv('DB_PASSWORD')
+        SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    else:
+        # Fallback to SQLite for development
+        SQLALCHEMY_DATABASE_URI = 'sqlite:///smart_notes.db'
+    
+    # SQLAlchemy settings
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ECHO = os.getenv('SQLALCHEMY_ECHO', 'False').lower() == 'true'
     
-    # Security
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # Flask settings
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
     
-    # AI Services
-    HUGGINGFACE_API_KEY = os.environ.get('HUGGINGFACE_API_KEY')
-    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+    # File upload settings
+    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
-    # File uploads
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
-    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'
+    # AI service settings
+    HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+    
+    @staticmethod
+    def get_db_info():
+        """Get database connection info for debugging"""
+        return {
+            'database_uri': Config.SQLALCHEMY_DATABASE_URI,
+            'using_env_file': os.path.exists('.env'),
+            'db_type': 'sqlite' if 'sqlite' in Config.SQLALCHEMY_DATABASE_URI else 'postgresql',
+            'upload_folder': Config.UPLOAD_FOLDER
+        }

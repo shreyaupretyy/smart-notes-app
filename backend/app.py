@@ -1,11 +1,13 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from config import Config
 import json
 import os
 import torch
+
+# Import database instance
+from database import db
 
 # Add new AI service imports
 from services.summarizer import Summarizer
@@ -17,39 +19,23 @@ from services.speech_to_text import SpeechToText
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Initialize database with app
+db.init_app(app)
+
 # Initialize extensions
-db = SQLAlchemy(app)
 CORS(app)
+
+# Import routes after app initialization to avoid circular imports
+from routes.api import notes_bp
+
+# Register blueprints
+app.register_blueprint(notes_bp)
 
 # Add debug logging
 @app.before_request
 def log_request_info():
     print(f"📍 Request: {request.method} {request.url}")
 
-# Models
-class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    summary = db.Column(db.Text)
-    keywords = db.Column(db.Text)  # JSON string
-    sentiment = db.Column(db.String(20))
-    statistics = db.Column(db.Text)  # JSON string for text stats
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'title': self.title,
-            'content': self.content,
-            'summary': self.summary,
-            'keywords': json.loads(self.keywords) if self.keywords else [],
-            'sentiment': self.sentiment,
-            'statistics': json.loads(self.statistics) if self.statistics else {},
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
-        }
 
 # Create upload directory
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -388,106 +374,6 @@ def test_long_summarization():
             'status': 'error',
             'message': str(e)
         }), 500
-# Notes CRUD operations (existing code remains the same)
-@app.route('/api/notes', methods=['GET'])
-def get_notes():
-    try:
-        notes = Note.query.order_by(Note.updated_at.desc()).all()
-        return jsonify({
-            'status': 'success',
-            'notes': [note.to_dict() for note in notes],
-            'count': len(notes)
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/notes', methods=['POST'])
-def create_note():
-    try:
-        data = request.get_json()
-        
-        if not data or 'title' not in data or 'content' not in data:
-            return jsonify({'status': 'error', 'message': 'Title and content are required'}), 400
-        
-        # Process text with AI
-        summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
-        
-        note = Note(
-            title=data['title'],
-            content=data['content'],
-            summary=summary,
-            keywords=json.dumps(keywords),
-            sentiment=sentiment,
-            statistics=json.dumps(statistics)
-        )
-        
-        db.session.add(note)
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Note created successfully',
-            'note': note.to_dict()
-        }), 201
-        
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/notes/<int:note_id>', methods=['GET'])
-def get_note(note_id):
-    try:
-        note = Note.query.get_or_404(note_id)
-        return jsonify({
-            'status': 'success',
-            'note': note.to_dict()
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 404
-
-@app.route('/api/notes/<int:note_id>', methods=['PUT'])
-def update_note(note_id):
-    try:
-        note = Note.query.get_or_404(note_id)
-        data = request.get_json()
-        
-        if 'title' in data:
-            note.title = data['title']
-        
-        if 'content' in data:
-            note.content = data['content']
-            # Re-process with AI
-            summary, keywords, sentiment, statistics = process_text_with_ai(data['content'])
-            note.summary = summary
-            note.keywords = json.dumps(keywords)
-            note.sentiment = sentiment
-            note.statistics = json.dumps(statistics)
-        
-        note.updated_at = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Note updated successfully',
-            'note': note.to_dict()
-        })
-        
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/notes/<int:note_id>', methods=['DELETE'])
-def delete_note(note_id):
-    try:
-        note = Note.query.get_or_404(note_id)
-        db.session.delete(note)
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Note deleted successfully'
-        })
-        
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # Image to text endpoint (placeholder for now)
 @app.route('/api/ai/image-to-text', methods=['POST'])
@@ -792,6 +678,8 @@ def get_gpu_info():
 
 # Replace the old placeholder image-to-text endpoint (remove the old one and keep this new one)
 # Also remove the old placeholder speech-to-text endpoint
+
+
 
 if __name__ == '__main__':
     try:
