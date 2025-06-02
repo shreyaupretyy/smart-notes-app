@@ -1,4 +1,4 @@
-// src/components/ImagePicker.js - Fix camera permissions and functionality
+// src/components/ImagePicker.js - Make image cover the whole box
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert, Image, Platform, Linking } from 'react-native';
 import { Button, Dialog, Portal, Card } from 'react-native-paper';
@@ -43,7 +43,6 @@ export default function ImagePickerComponent({ onImageSelected, currentImage }) 
     try {
       console.log('📷 Requesting camera permissions...');
       
-      // Request camera permissions
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== 'granted') {
@@ -71,7 +70,7 @@ export default function ImagePickerComponent({ onImageSelected, currentImage }) 
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.8,
-        base64: false, // We'll read it ourselves
+        base64: false,
       });
 
       console.log('📷 Camera result:', { 
@@ -93,7 +92,6 @@ export default function ImagePickerComponent({ onImageSelected, currentImage }) 
     try {
       console.log('🖼️ Requesting media library permissions...');
       
-      // Request media library permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
       if (status !== 'granted') {
@@ -121,7 +119,7 @@ export default function ImagePickerComponent({ onImageSelected, currentImage }) 
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.8,
-        base64: false, // We'll read it ourselves
+        base64: false,
       });
 
       console.log('🖼️ Gallery result:', { 
@@ -147,15 +145,40 @@ export default function ImagePickerComponent({ onImageSelected, currentImage }) 
     <View style={styles.container}>
       {currentImage ? (
         <Card style={styles.imageCard}>
-          <Image source={{ uri: currentImage.uri }} style={styles.imagePreview} />
-          <Card.Actions>
-            <Button onPress={removeImage} textColor="#d32f2f">
-              Remove
-            </Button>
-            <Button onPress={() => setDialogVisible(true)}>
-              Change
-            </Button>
-          </Card.Actions>
+          {/* ✅ Image covers the whole card except button area */}
+          <View style={styles.imageContainer}>
+            <Image 
+              source={{ uri: currentImage.uri }} 
+              style={styles.imagePreview}
+              resizeMode="cover" // ✅ Changed back to 'cover' to fill the entire space
+            />
+          </View>
+          
+          {/* ✅ Buttons positioned at bottom with overlay style */}
+          <View style={styles.buttonOverlay}>
+            <View style={styles.buttonContainer}>
+              <Button 
+                onPress={removeImage} 
+                mode="contained"
+                buttonColor="rgba(244, 67, 54, 0.9)"
+                textColor="white"
+                compact
+                style={styles.overlayButton}
+              >
+                Remove
+              </Button>
+              <Button 
+                onPress={() => setDialogVisible(true)}
+                mode="contained"
+                buttonColor="rgba(33, 150, 243, 0.9)"
+                textColor="white"
+                compact
+                style={styles.overlayButton}
+              >
+                Change
+              </Button>
+            </View>
+          </View>
         </Card>
       ) : (
         <Button 
@@ -212,11 +235,44 @@ const styles = StyleSheet.create({
   },
   imageCard: {
     marginVertical: 8,
+    elevation: 2,
+    overflow: 'hidden', // ✅ Ensures image doesn't overflow card borders
+    position: 'relative', // ✅ For absolute positioning of buttons
   },
+  // ✅ Image container takes full card space
+  imageContainer: {
+    width: '100%',
+    height: 300, // Fixed height for consistent card size
+    position: 'relative',
+  },
+  // ✅ Image covers the entire container
   imagePreview: {
     width: '100%',
-    height: 200,
-    resizeMode: 'cover',
+    height: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  // ✅ Button overlay positioned at bottom
+  buttonOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Semi-transparent background
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  // ✅ Button container for horizontal layout
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  // ✅ Overlay button styles
+  overlayButton: {
+    minWidth: 80,
+    elevation: 2,
   },
   dialogActions: {
     flexDirection: 'column',

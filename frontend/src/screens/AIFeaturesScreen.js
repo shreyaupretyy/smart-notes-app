@@ -62,6 +62,21 @@ export default function AIFeaturesScreen({ navigation }) {
     }
   });
 
+  // ✅ GPU Info Mutation - Fix the function name
+  const gpuInfoMutation = useMutation({
+    mutationFn: () => apiService.getGPUInfo(),
+    onSuccess: (response) => {
+      if (response.data) {
+        setGpuInfo(response.data);
+        console.log('✅ GPU info received:', response.data);
+      }
+    },
+    onError: (error) => {
+      console.error('❌ GPU info error:', error);
+      Alert.alert('Error', 'Failed to get GPU information');
+    }
+  });
+
   // GPU Info Query
   const { data: gpuInfoData, isLoading: isLoadingGPUInfo } = useQuery({
     queryKey: ['gpu-info'],
@@ -95,6 +110,12 @@ export default function AIFeaturesScreen({ navigation }) {
       console.log('🖼️ Processing image in AI Features...');
       imageProcessingMutation.mutate(imageData.base64);
     }
+  };
+
+  // ✅ Fix: Make sure this function name matches exactly
+  const handleGPUInfo = () => {
+    console.log('🎮 Getting GPU info...');
+    gpuInfoMutation.mutate();
   };
 
   const getSentimentColor = (sentiment) => {
@@ -291,6 +312,7 @@ export default function AIFeaturesScreen({ navigation }) {
               Check GPU status and AI model information
             </Text>
             
+            {/* ✅ Make sure the button calls the correct function */}
             <Button
               mode="outlined"
               onPress={handleGPUInfo}

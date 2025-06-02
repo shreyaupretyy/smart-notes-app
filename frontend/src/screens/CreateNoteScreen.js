@@ -15,6 +15,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '../services/api';
 import { useAIPreview } from '../hooks/useAIPreview';
 import ImagePickerComponent from '../components/ImagePicker'; // ✅ Import new component
+import AudioRecorder from '../components/AudioRecorder';
 
 export default function CreateNoteScreen({ route, navigation }) {
   const [title, setTitle] = useState('');
@@ -24,6 +25,8 @@ export default function CreateNoteScreen({ route, navigation }) {
   const [selectedImage, setSelectedImage] = useState(null); // ✅ Add image state
   const [imageAnalysis, setImageAnalysis] = useState(null); // ✅ Add image analysis state
   const [isProcessingImage, setIsProcessingImage] = useState(false); // ✅ Add processing state
+  const [selectedAudio, setSelectedAudio] = useState(null);
+  const [audioAnalysis, setAudioAnalysis] = useState(null);
 
   const queryClient = useQueryClient();
 
@@ -130,6 +133,44 @@ export default function CreateNoteScreen({ route, navigation }) {
       Alert.alert('Error', 'Failed to update note. Please try again.');
     }
   });
+
+  // ✅ Audio Processing Mutation
+  const audioProcessingMutation = useMutation({
+    mutationFn: (base64Data) => apiService.processAudio(base64Data),
+    onSuccess: (response) => {
+      if (response.data?.result) {
+        setAudioAnalysis(response.data.result);
+        
+        // Auto-append transcribed text to note content
+        const transcribedText = response.data.result.transcribed_text;
+        if (transcribedText && transcribedText !== "No speech detected in audio") {
+          setContent(prevContent => {
+            const newContent = prevContent 
+              ? `${prevContent}\n\n${transcribedText}` 
+              : transcribedText;
+            return newContent;
+          });
+        }
+        
+        console.log('✅ Audio analysis complete:', response.data.result);
+      }
+    },
+    onError: (error) => {
+      console.error('❌ Audio processing error:', error);
+      Alert.alert('Error', 'Failed to process audio recording');
+    }
+  });
+
+  // ✅ Handle Audio Selection and Processing
+  const handleAudioSelected = async (audioData) => {
+    setSelectedAudio(audioData);
+    setAudioAnalysis(null);
+    
+    if (audioData) {
+      console.log('🎤 Processing audio in CreateNote...');
+      audioProcessingMutation.mutate(audioData.base64);
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim() || !content.trim()) {
@@ -261,6 +302,163 @@ export default function CreateNoteScreen({ route, navigation }) {
                     {imageAnalysis.analysis.keywords && imageAnalysis.analysis.keywords.length > 0 && (
                       <View style={styles.keywordsContainer}>
                         {imageAnalysis.analysis.keywords.slice(0, 5).map((keyword, index) => (
+                          <Chip key={index} style={styles.keywordChip} compact>
+                            {keyword}
+                          </Chip>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+          )}
+
+          <View style={styles.contentSection}>
+            <View style={styles.contentHeader}>
+              <Text style={styles.label}>Content *</Text>
+              <View style={styles.aiToggle}>
+                <Text style={styles.aiToggleLabel}>AI Preview</Text>
+                <Switch
+                  value={aiPreviewEnabled}
+                  onValueChange={setAiPreviewEnabled}
+                  disabled={isSaving}
+                />
+              </View>
+            </View>
+            
+            <TextInput
+              style={styles.contentInput}
+              value={content}
+              onChangeText={setContent}
+              placeholder="Enter your note content..."
+              multiline
+              textAlignVertical="top"
+              editable={!isSaving}
+            />
+          </View>
+
+          {/* Existing AI Preview Card */}
+          {aiPreviewEnabled && (content.length >= 50 || isAnalyzing || aiPreview) && (
+            <Card style={styles.aiPreviewCard}>
+              <Card.Content>
+                <View style={styles.aiPreviewHeader}>
+                  <Text style={styles.aiPreviewTitle}>🤖 AI Preview</Text>
+                  {isAnalyzing && <ActivityIndicator size="small" />}
+                </View>
+
+                {content.length < 50 && !isAnalyzing && (
+                  <Text style={styles.aiHint}>
+                    Type at least 50 characters to see AI analysis...
+                  </Text>
+                )}
+
+                {isAnalyzing && (
+                  <Text style={styles.aiAnalyzing}>
+                    Analyzing your content...
+                  </Text>
+                )}
+
+                {aiPreview && !isAnalyzing && (
+                  <View style={styles.aiResults}>
+                    {aiPreview.analysis?.summary && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Summary:</Text>
+                        <Text style={styles.aiSectionContent}>
+                          {aiPreview.analysis.summary}
+                        </Text>
+                      </View>
+                    )}
+
+                    {aiPreview.analysis?.sentiment && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Sentiment:</Text>
+                        <Chip 
+                          style={[
+                            styles.sentimentChip, 
+                            { backgroundColor: getSentimentColor(aiPreview.analysis.sentiment) }
+                          ]}
+                          textStyle={{ color: 'white' }}
+                        >
+                          {aiPreview.analysis.sentiment}
+                        </Chip>
+                      </View>
+                    )}
+
+                    {aiPreview.analysis?.keywords && aiPreview.analysis.keywords.length > 0 && (
+                      <View style={styles.aiSection}>
+                        <Text style={styles.aiSectionTitle}>Keywords:</Text>
+                        <View style={styles.keywordsContainer}>
+                          {aiPreview.analysis.keywords.slice(0, 5).map((keyword, index) => (
+                            <Chip key={index} style={styles.keywordChip} compact>
+                              {keyword}
+                            </Chip>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    <Text style={styles.aiNote}>
+                      💡 This is a preview. Final analysis will be saved with your note.
+                    </Text>
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+          )}
+
+          {/* ✅ Add Audio Recording Section */}
+          <Text style={styles.sectionLabel}>🎤 Voice Note</Text>
+          <AudioRecorder 
+            onAudioRecorded={handleAudioSelected}
+            currentAudio={selectedAudio}
+          />
+
+          {/* ✅ Show Audio Processing Status */}
+          {audioProcessingMutation.isPending && (
+            <Card style={styles.processingCard}>
+              <Card.Content style={styles.processingContent}>
+                <ActivityIndicator size="large" color="#6366f1" />
+                <Text style={styles.processingText}>
+                  Converting speech to text...
+                </Text>
+              </Card.Content>
+            </Card>
+          )}
+
+          {/* ✅ Show Audio Analysis Results */}
+          {audioAnalysis && (
+            <Card style={styles.analysisCard}>
+              <Card.Content>
+                <Text style={styles.analysisTitle}>🎤 Speech Analysis</Text>
+                
+                {audioAnalysis.transcribed_text && (
+                  <View style={styles.transcriptionContainer}>
+                    <Text style={styles.transcriptionLabel}>Transcription:</Text>
+                    <Text style={styles.transcriptionText}>
+                      "{audioAnalysis.transcribed_text}"
+                    </Text>
+                  </View>
+                )}
+                
+                {audioAnalysis.analysis && (
+                  <View style={styles.analysisResults}>
+                    {audioAnalysis.analysis.sentiment && (
+                      <Chip 
+                        style={[
+                          styles.sentimentChip,
+                          { backgroundColor: getSentimentColor(audioAnalysis.analysis.sentiment) }
+                        ]}
+                        textStyle={{ color: 'white' }}
+                        compact
+                      >
+                        {audioAnalysis.analysis.sentiment}
+                      </Chip>
+                    )}
+                    
+                    {audioAnalysis.analysis.keywords && (
+                      <View style={styles.keywordsContainer}>
+                        {audioAnalysis.analysis.keywords.slice(0, 5).map((keyword, index) => (
                           <Chip key={index} style={styles.keywordChip} compact>
                             {keyword}
                           </Chip>
@@ -584,5 +782,60 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 4,
     color: '#333',
+  },
+  // Audio components styles
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 24,
+    marginBottom: 12,
+    color: '#333',
+  },
+  analysisCard: {
+    marginVertical: 16,
+    backgroundColor: '#f3e5f5',
+  },
+  analysisTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#6366f1',
+  },
+  transcriptionContainer: {
+    marginBottom: 16,
+  },
+  transcriptionLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    color: '#333',
+  },
+  transcriptionText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: '#555',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 6,
+    borderLeftWidth: 4,
+    borderLeftColor: '#9c27b0',
+  },
+  analysisResults: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sentimentChip: {
+    marginRight: 8,
+  },
+  keywordsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  keywordChip: {
+    marginRight: 6,
+    marginBottom: 4,
   },
 });

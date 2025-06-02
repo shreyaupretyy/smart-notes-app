@@ -251,6 +251,25 @@ class APIService {
     this.ensureInitialized();
     return this.api.get('/ai/test-speech');
   };
+
+  // ✅ Add audio processing method
+  processAudio = async (base64AudioData) => {
+    console.log('🎤 API: Processing audio...');
+    this.ensureInitialized();
+    
+    try {
+      console.log('🔄 API Request: POST /ai/process-audio');
+      const response = await this.api.post('/ai/process-audio', {
+        audio: base64AudioData
+      });
+      
+      console.log('✅ API Response:', response.status, `${this.baseURL}/ai/process-audio`);
+      return response;
+    } catch (error) {
+      console.error('❌ Audio processing error:', error.response?.data || error.message);
+      throw error;
+    }
+  };
 }
 
 const apiService = new APIService();

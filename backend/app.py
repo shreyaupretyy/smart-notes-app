@@ -818,6 +818,142 @@ def api_process_image():
             'message': f'Image processing failed: {str(e)}'
         }), 500
 
+# backend/app.py - Fix the audio processing route to use transcribe_audio
+@app.route('/api/ai/process-audio', methods=['POST'])
+def process_audio():
+    """Process audio with speech-to-text"""
+    try:
+        print("🎤 Audio processing endpoint hit!")
+        
+        data = request.get_json()
+        
+        if not data or 'audio' not in data:
+            print("❌ No audio data in request")
+            return jsonify({
+                'status': 'error',
+                'message': 'Audio data is required'
+            }), 400
+        
+        print("🎤 Processing audio with AI...")
+        
+        # Get the base64 audio data
+        audio_base64 = data['audio']
+        
+        # Validate base64 data
+        try:
+            test_decode = base64.b64decode(audio_base64)
+            print(f"✅ Base64 audio data validated: {len(test_decode)} bytes")
+        except Exception as decode_error:
+            print(f"❌ Invalid base64 data: {decode_error}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid audio data format'
+            }), 400
+        
+        # Process with SpeechToText service
+        transcribed_text = ""
+        analysis = None
+        
+        try:
+            if speech_to_text:
+                print("🔍 Processing audio with SpeechToText service...")
+                
+                # ✅ Use the correct method name: transcribe_audio
+                result = speech_to_text.transcribe_audio(audio_base64, language='auto')
+                print(f"🔍 Raw result: {result}")
+                print(f"🔍 Result type: {type(result)}")
+                
+                # Handle the response format from your SpeechToText service
+                if isinstance(result, dict):
+                    if 'error' in result:
+                        print(f"❌ SpeechToText service error: {result['error']}")
+                        transcribed_text = f"Speech processing error: {result['error']}"
+                    else:
+                        # Try to get transcription from different possible keys
+                        transcribed_text = (
+                            result.get('transcription', '') or 
+                            result.get('whisper', '') or 
+                            result.get('speech_recognition', '') or
+                            result.get('text', '') or
+                            result.get('content', '')
+                        )
+                        
+                        print(f"📝 Available results:")
+                        for key in ['transcription', 'whisper', 'speech_recognition']:
+                            if key in result:
+                                text = result[key]
+                                print(f"  - {key}: {text[:50]}{'...' if len(text) > 50 else ''}")
+                        
+                        print(f"📝 Selected transcription: {transcribed_text[:100] if transcribed_text else 'None'}...")
+                else:
+                    transcribed_text = str(result)
+                    print(f"📝 Transcribed text (string): {transcribed_text[:100] if transcribed_text else 'None'}...")
+                    
+            else:
+                print("⚠️ Speech-to-text service not available")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Speech-to-text service not available'
+                }), 503
+                
+        except Exception as stt_error:
+            print(f"❌ Speech-to-text processing failed: {stt_error}")
+            import traceback
+            traceback.print_exc()
+            transcribed_text = f"Speech-to-text processing failed: {str(stt_error)}"
+        
+        # Clean up transcribed text
+        if transcribed_text:
+            # Remove common error prefixes
+            if transcribed_text.lower().startswith('speech-to-text processing failed'):
+                print("⚠️ Skipping AI analysis due to transcription error")
+                analysis = None
+            elif transcribed_text.lower().startswith('speech processing error'):
+                print("⚠️ Skipping AI analysis due to processing error")
+                analysis = None
+            elif len(transcribed_text.strip()) < 5:
+                print("⚠️ Transcription too short for analysis")
+                analysis = None
+            else:
+                # Analyze meaningful transcription with AI
+                try:
+                    print("🤖 Analyzing transcribed text...")
+                    summary, keywords, sentiment, statistics = process_text_with_ai(transcribed_text)
+                    analysis = {
+                        'summary': summary,
+                        'keywords': keywords[:10] if keywords else [],
+                        'sentiment': sentiment,
+                        'statistics': statistics
+                    }
+                    print(f"✅ Text analysis complete: {sentiment} sentiment, {len(keywords) if keywords else 0} keywords")
+                except Exception as ai_error:
+                    print(f"⚠️ Text analysis failed: {ai_error}")
+                    analysis = None
+        
+        # Prepare final result
+        final_text = transcribed_text or "No speech detected in audio"
+        
+        result_data = {
+            'transcribed_text': final_text,
+            'analysis': analysis,
+            'audio_processed': True
+        }
+        
+        print("✅ Audio processing completed successfully")
+        return jsonify({
+            'status': 'success',
+            'result': result_data
+        })
+        
+    except Exception as e:
+        print(f"❌ Error processing audio: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Audio processing failed: {str(e)}'
+        }), 500
+
 
 
 if __name__ == '__main__':
