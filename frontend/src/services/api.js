@@ -177,7 +177,7 @@ class APIService {
     }
   }
 
-  // API Methods - all check initialization first
+  // ✅ Core API Methods - Notes Management
   checkHealth = () => {
     this.ensureInitialized();
     return this.api.get('/health');
@@ -198,9 +198,22 @@ class APIService {
     return this.api.get(`/notes/${id}`);
   };
 
-  updateNote = (id, noteData) => {
-    this.ensureInitialized();
-    return this.api.put(`/notes/${id}`, noteData);
+  updateNote = async (id, noteData) => {
+    console.log(`🔄 API: Updating note ${id} with data:`, {
+      title: noteData.title,
+      hasAiAnalysis: !!noteData.ai_analysis,
+      contentLength: noteData.content?.length || 0
+    });
+    
+    const response = await this.api.put(`/notes/${id}`, noteData);
+    
+    console.log(`✅ API: Note ${id} updated:`, {
+      status: response.status,
+      hasData: !!response.data,
+      hasNote: !!(response.data?.note)
+    });
+    
+    return response;
   };
 
   deleteNote = (id) => {
@@ -208,51 +221,38 @@ class APIService {
     return this.api.delete(`/notes/${id}`);
   };
   
-  // AI Services
-  summarizeText = (text) => {
-    this.ensureInitialized();
-    return this.api.post('/ai/summarize', { text });
-  };
-
+  // ✅ AI Services - Text Processing
   analyzeText = async (text) => {
     console.log('🤖 Analyzing text for preview...');
     this.ensureInitialized();
     return this.api.post('/ai/analyze', { text });
   };
 
+  summarizeText = (text) => {
+    this.ensureInitialized();
+    return this.api.post('/ai/summarize', { text });
+  };
+
+  // ✅ AI Services - Image Processing
   processImage = async (base64ImageData) => {
     console.log('🖼️ API: Processing image...');
     this.ensureInitialized();
     
-    const response = await this.api.post('/ai/process-image', {
-      image: base64ImageData
-    });
-    
-    console.log('✅ API: Image processed successfully');
-    return response;
+    try {
+      console.log('🔄 API Request: POST /ai/process-image');
+      const response = await this.api.post('/ai/process-image', {
+        image: base64ImageData
+      });
+      
+      console.log('✅ API Response:', response.status, `${this.baseURL}/ai/process-image`);
+      return response;
+    } catch (error) {
+      console.error('❌ Image processing error:', error.response?.data || error.message);
+      throw error;
+    }
   };
 
-  transcribeAudio = (audioData, language = 'auto') => {
-    this.ensureInitialized();
-    return this.api.post('/ai/speech-to-text', { audio: audioData, language });
-  };
-
-  getGPUInfo = () => {
-    this.ensureInitialized();
-    return this.api.get('/ai/gpu-info');
-  };
-
-  testImageProcessing = () => {
-    this.ensureInitialized();
-    return this.api.get('/ai/test-image');
-  };
-
-  testSpeechProcessing = () => {
-    this.ensureInitialized();
-    return this.api.get('/ai/test-speech');
-  };
-
-  // ✅ Add audio processing method
+  // ✅ AI Services - Audio Processing
   processAudio = async (base64AudioData) => {
     console.log('🎤 API: Processing audio...');
     this.ensureInitialized();
@@ -270,8 +270,74 @@ class APIService {
       throw error;
     }
   };
+
+  // ✅ Legacy Audio Method (for backward compatibility)
+  transcribeAudio = (audioData, language = 'auto') => {
+    console.log('🎤 Legacy transcribe method - redirecting to processAudio...');
+    return this.processAudio(audioData);
+  };
+
+  // ✅ System Information
+  getGPUInfo = () => {
+    this.ensureInitialized();
+    return this.api.get('/ai/gpu-info');
+  };
+
+  // ✅ Test Endpoints (for development)
+  testImageProcessing = () => {
+    this.ensureInitialized();
+    return this.api.get('/ai/test-image');
+  };
+
+  testSpeechProcessing = () => {
+    this.ensureInitialized();
+    return this.api.get('/ai/test-speech');
+  };
+
+  // ✅ Utility Methods
+  testConnection = async () => {
+    try {
+      const response = await this.checkHealth();
+      return { 
+        success: true, 
+        data: response.data,
+        baseURL: this.baseURL
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.message,
+        baseURL: this.baseURL
+      };
+    }
+  };
+
+  // ✅ Get API Status
+  getStatus = () => {
+    return {
+      isInitialized: this.isInitialized,
+      isConnected: this.isConnected,
+      baseURL: this.baseURL,
+      platform: Platform.OS,
+      environment: __DEV__ ? 'development' : 'production'
+    };
+  };
+
+  // ✅ Force Reconnection
+  reconnect = async () => {
+    console.log('🔄 Forcing API reconnection...');
+    this.isInitialized = false;
+    this.isConnected = false;
+    this.api = null;
+    this.baseURL = null;
+    
+    return await this.initialize();
+  };
 }
 
+// ✅ Create and export single instance
 const apiService = new APIService();
+
+// ✅ Export both the service instance and axios instance (for compatibility)
 export { apiService };
-export default apiService.api;
+export default apiService;

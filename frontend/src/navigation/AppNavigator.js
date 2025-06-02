@@ -1,8 +1,9 @@
-// src/navigation/AppNavigator.js
+// src/navigation/AppNavigator.js - Fix back navigation for edit mode
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
+import { IconButton } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 // Import screens
@@ -15,6 +16,28 @@ import SettingsScreen from '../screens/SettingsScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
+// ✅ Custom back button that goes to Notes List
+const CustomBackButton = ({ navigation }) => {
+  return (
+    <IconButton
+      icon="arrow-left"
+      size={24}
+      onPress={() => navigation.navigate('NotesList')}
+    />
+  );
+};
+
+// ✅ Custom back button for Edit Note that goes to Note Detail
+const EditNoteBackButton = ({ navigation, noteId }) => {
+  return (
+    <IconButton
+      icon="arrow-left"
+      size={24}
+      onPress={() => navigation.navigate('NoteDetail', { noteId })}
+    />
+  );
+};
+
 // Notes Stack Navigator
 function NotesStack() {
   return (
@@ -22,23 +45,46 @@ function NotesStack() {
       <Stack.Screen 
         name="NotesList" 
         component={NotesListScreen}
-        options={{ title: 'Smart Notes' }}
+        options={{ 
+          title: 'Smart Notes',
+          headerLeft: null // ✅ Remove back button from home screen
+        }}
       />
       <Stack.Screen 
         name="CreateNote" 
         component={CreateNoteScreen}
-        options={{ title: 'New Note' }}
+        options={({ navigation, route }) => {
+          // ✅ Check if we're editing a note
+          const noteToEdit = route.params?.noteToEdit;
+          const isEditing = !!noteToEdit;
+          
+          return {
+            title: isEditing ? 'Edit Note' : 'New Note',
+            headerLeft: () => {
+              if (isEditing) {
+                // ✅ If editing, go back to note detail
+                return <EditNoteBackButton navigation={navigation} noteId={noteToEdit.id} />;
+              } else {
+                // ✅ If creating new note, go to notes list
+                return <CustomBackButton navigation={navigation} />;
+              }
+            }
+          };
+        }}
       />
       <Stack.Screen 
         name="NoteDetail" 
         component={NoteDetailScreen}
-        options={{ title: 'Note Details' }}
+        options={({ navigation }) => ({
+          title: 'Note Details',
+          headerLeft: () => <CustomBackButton navigation={navigation} /> // ✅ Always go to notes list
+        })}
       />
     </Stack.Navigator>
   );
 }
 
-// AI Features Stack Navigator (add CreateNote here too)
+// AI Features Stack Navigator
 function AIFeaturesStack() {
   return (
     <Stack.Navigator>
@@ -50,7 +96,10 @@ function AIFeaturesStack() {
       <Stack.Screen 
         name="CreateNote" 
         component={CreateNoteScreen}
-        options={{ title: 'New Note' }}
+        options={({ navigation }) => ({
+          title: 'New Note',
+          headerLeft: () => <CustomBackButton navigation={navigation} />
+        })}
       />
     </Stack.Navigator>
   );
@@ -86,7 +135,7 @@ export default function AppNavigator() {
         />
         <Tab.Screen 
           name="AI Features" 
-          component={AIFeaturesStack}  // ✅ Changed to stack
+          component={AIFeaturesStack}
           options={{ headerShown: false }}
         />
         <Tab.Screen 

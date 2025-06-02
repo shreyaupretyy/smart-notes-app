@@ -1,6 +1,6 @@
-// src/components/AudioRecorder.js - New audio recording component
+// src/components/AudioRecorder.js - Fixed version with proper audio handling
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, Platform, Linking } from 'react-native';
 import { Button, Card, ProgressBar, Chip } from 'react-native-paper';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -13,14 +13,45 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  // ✅ Cleanup function
+  useEffect(() => {
+    return () => {
+      // Cleanup when component unmounts
+      cleanupAudio();
+    };
+  }, []);
+
+  // ✅ Cleanup sound when it changes
   useEffect(() => {
     return sound
       ? () => {
-          sound.unloadAsync();
+          console.log('🧹 Cleaning up sound...');
+          sound.unloadAsync().catch(console.error);
         }
       : undefined;
   }, [sound]);
+
+  // ✅ Cleanup audio resources
+  const cleanupAudio = async () => {
+    try {
+      if (sound) {
+        await sound.unloadAsync();
+        setSound(null);
+      }
+      if (recording) {
+        await recording.stopAndUnloadAsync();
+        setRecording(null);
+      }
+      setIsPlaying(false);
+      setIsRecording(false);
+      setPlaybackPosition(0);
+      setPlaybackDuration(0);
+    } catch (error) {
+      console.error('❌ Cleanup error:', error);
+    }
+  };
 
   // Request audio permissions
   const requestPermissions = async () => {
@@ -50,44 +81,58 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
     }
   };
 
-  // Start recording
+  // ✅ Start recording with better audio settings
   const startRecording = async () => {
     try {
       console.log('🎤 Starting audio recording...');
       
+      // ✅ First cleanup any existing recording
+      await cleanupAudio();
+      
       const hasPermission = await requestPermissions();
       if (!hasPermission) return;
 
-      // Configure audio mode
+      // ✅ Configure audio mode for better recording quality
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
+
+      // ✅ Better recording options for higher volume and quality
+      const recordingOptions = {
+        android: {
+          extension: '.wav',
+          outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+          audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
+          sampleRate: 44100, // Higher sample rate for better quality
+          numberOfChannels: 2, // Stereo for better sound
+          bitRate: 128000,
+        },
+        ios: {
+          extension: '.wav',
+          outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+          audioQuality: Audio.IOSAudioQuality.MAX, // ✅ Maximum quality
+          sampleRate: 44100, // Higher sample rate
+          numberOfChannels: 2, // Stereo
+          bitRate: 128000,
+          linearPCMBitDepth: 16,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
+        },
+        web: {
+          mimeType: 'audio/webm',
+          bitsPerSecond: 128000,
+        },
+      };
+
+      console.log('🎤 Creating recording with options:', recordingOptions);
 
       // Start recording
       const { recording: newRecording } = await Audio.Recording.createAsync(
-        {
-          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-          android: {
-            extension: '.wav',
-            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
-            sampleRate: 16000, // Optimal for Whisper
-            numberOfChannels: 1,
-            bitRate: 128000,
-          },
-          ios: {
-            extension: '.wav',
-            outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
-            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
-            sampleRate: 16000, // Optimal for Whisper
-            numberOfChannels: 1,
-            bitRate: 128000,
-            linearPCMBitDepth: 16,
-            linearPCMIsBigEndian: false,
-            linearPCMIsFloat: false,
-          },
-        },
+        recordingOptions,
         (status) => {
           if (status.isRecording) {
             setRecordingDuration(Math.floor(status.durationMillis / 1000));
@@ -98,36 +143,48 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
       setRecording(newRecording);
       setIsRecording(true);
       setRecordingDuration(0);
-      console.log('✅ Recording started');
+      console.log('✅ Recording started successfully');
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
-      Alert.alert('Error', 'Failed to start recording');
+      Alert.alert('Error', `Failed to start recording: ${error.message}`);
+      // ✅ Reset state on error
+      setIsRecording(false);
+      setRecording(null);
     }
   };
 
-  // Stop recording
+  // ✅ Stop recording with proper cleanup
   const stopRecording = async () => {
     try {
       console.log('🛑 Stopping recording...');
       
-      if (!recording) return;
+      if (!recording) {
+        console.log('⚠️ No recording to stop');
+        return;
+      }
 
       setIsRecording(false);
+      setIsProcessing(true);
+
+      // Stop and get URI
       await recording.stopAndUnloadAsync();
-      
       const uri = recording.getURI();
       console.log('📁 Recording saved to:', uri);
+
+      // ✅ Clear recording reference immediately
+      setRecording(null);
+      setRecordingDuration(0);
 
       // Process the audio file
       if (uri) {
         await processAudioFile(uri);
       }
 
-      setRecording(null);
-      setRecordingDuration(0);
     } catch (error) {
       console.error('❌ Failed to stop recording:', error);
       Alert.alert('Error', 'Failed to stop recording');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -164,7 +221,7 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
     }
   };
 
-  // Play/pause audio
+  // ✅ Play/pause audio with better volume settings
   const togglePlayback = async () => {
     try {
       if (sound) {
@@ -176,14 +233,34 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
           setIsPlaying(true);
         }
       } else if (currentAudio) {
+        // ✅ Set audio mode for better playback volume
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+          playThroughEarpieceAndroid: false,
+        });
+
         const { sound: newSound } = await Audio.Sound.createAsync(
           { uri: currentAudio.uri },
-          { shouldPlay: true },
+          { 
+            shouldPlay: true,
+            volume: 1.0, // ✅ Maximum volume
+            rate: 1.0,
+            shouldCorrectPitch: true,
+          },
           (status) => {
             if (status.isLoaded) {
               setPlaybackPosition(status.positionMillis || 0);
               setPlaybackDuration(status.durationMillis || 0);
-              setIsPlaying(status.isPlaying);
+              setIsPlaying(status.isPlaying || false);
+              
+              // When playback finishes
+              if (status.didJustFinish) {
+                setIsPlaying(false);
+                setPlaybackPosition(0);
+              }
             }
           }
         );
@@ -192,20 +269,48 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
       }
     } catch (error) {
       console.error('❌ Playback error:', error);
-      Alert.alert('Error', 'Failed to play audio');
+      Alert.alert('Error', `Failed to play audio: ${error.message}`);
     }
   };
 
-  // Remove audio
-  const removeAudio = () => {
-    if (sound) {
-      sound.unloadAsync();
-      setSound(null);
+  // ✅ Remove audio with complete cleanup
+  const removeAudio = async () => {
+    try {
+      console.log('🗑️ Removing audio...');
+      
+      // ✅ Complete cleanup
+      await cleanupAudio();
+      
+      // ✅ Reset all state
+      setRecordingDuration(0);
+      setPlaybackPosition(0);
+      setPlaybackDuration(0);
+      
+      // ✅ Notify parent component
+      onAudioRecorded(null);
+      
+      console.log('✅ Audio removed successfully');
+    } catch (error) {
+      console.error('❌ Error removing audio:', error);
     }
-    setIsPlaying(false);
-    setPlaybackPosition(0);
-    setPlaybackDuration(0);
-    onAudioRecorded(null);
+  };
+
+  // ✅ Re-record function with proper cleanup
+  const reRecord = async () => {
+    try {
+      console.log('🔄 Re-recording...');
+      
+      // ✅ Remove current audio first
+      await removeAudio();
+      
+      // ✅ Small delay to ensure cleanup
+      setTimeout(() => {
+        startRecording();
+      }, 100);
+      
+    } catch (error) {
+      console.error('❌ Re-record error:', error);
+    }
   };
 
   // Format time display
@@ -241,11 +346,12 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
             )}
           </Card.Content>
           
-          <Card.Actions>
+          <Card.Actions style={styles.cardActions}>
             <Button 
               onPress={togglePlayback}
               icon={isPlaying ? "pause" : "play"}
               mode="outlined"
+              style={styles.actionButton}
             >
               {isPlaying ? 'Pause' : 'Play'}
             </Button>
@@ -253,12 +359,14 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
               onPress={removeAudio}
               textColor="#d32f2f"
               icon="delete"
+              style={styles.actionButton}
             >
               Remove
             </Button>
             <Button 
-              onPress={startRecording}
+              onPress={reRecord} // ✅ Use new reRecord function
               icon="microphone"
+              style={styles.actionButton}
             >
               Re-record
             </Button>
@@ -270,7 +378,7 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
             {isRecording ? (
               <View style={styles.recordingContainer}>
                 <View style={styles.recordingIndicator}>
-                  <View style={styles.pulsingDot} />
+                  <View style={[styles.pulsingDot, isRecording && styles.pulsing]} />
                   <Text style={styles.recordingText}>Recording...</Text>
                 </View>
                 <Text style={styles.durationText}>
@@ -285,6 +393,10 @@ export default function AudioRecorder({ onAudioRecorded, currentAudio }) {
                 >
                   Stop Recording
                 </Button>
+              </View>
+            ) : isProcessing ? (
+              <View style={styles.processingContainer}>
+                <Text style={styles.processingText}>Processing audio...</Text>
               </View>
             ) : (
               <View style={styles.startContainer}>
@@ -343,6 +455,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  cardActions: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  actionButton: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
   recordingContainer: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -358,7 +478,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#d32f2f',
     marginRight: 8,
-    // Add pulsing animation if needed
+  },
+  pulsing: {
+    opacity: 0.7,
+    // You can add animation here if needed
   },
   recordingText: {
     fontSize: 18,
@@ -387,5 +510,14 @@ const styles = StyleSheet.create({
   recordButton: {
     minWidth: 150,
     backgroundColor: '#6366f1',
+  },
+  processingContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  processingText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
   },
 });
