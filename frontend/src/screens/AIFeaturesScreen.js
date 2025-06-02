@@ -15,23 +15,24 @@ import {
   ActivityIndicator,
   Divider,
 } from 'react-native-paper';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { apiService } from '../services/api';
-import ImagePickerComponent from '../components/ImagePicker'; // ✅ Import ImagePicker
+import ImagePickerComponent from '../components/ImagePicker';
+import AudioRecorder from '../components/AudioRecorder';
 
 export default function AIFeaturesScreen({ navigation }) {
   // Text Analysis State
   const [textInput, setTextInput] = useState('');
   const [textAnalysis, setTextAnalysis] = useState(null);
 
-  // ✅ Image Processing State
+  // Image Processing State
   const [selectedImage, setSelectedImage] = useState(null);
   const [imageAnalysis, setImageAnalysis] = useState(null);
 
-  // GPU Info State
-  const [gpuInfo, setGpuInfo] = useState(null);
-  const [isRunningTests, setIsRunningTests] = useState(false);
+  // ✅ Voice to Text State
+  const [selectedAudio, setSelectedAudio] = useState(null);
+  const [transcriptionResult, setTranscriptionResult] = useState(null);
 
   // Text Analysis Mutation
   const textAnalysisMutation = useMutation({
@@ -47,7 +48,7 @@ export default function AIFeaturesScreen({ navigation }) {
     }
   });
 
-  // ✅ Image Processing Mutation
+  // Image Processing Mutation
   const imageProcessingMutation = useMutation({
     mutationFn: (base64Data) => apiService.processImage(base64Data),
     onSuccess: (response) => {
@@ -62,33 +63,35 @@ export default function AIFeaturesScreen({ navigation }) {
     }
   });
 
-  // ✅ GPU Info Mutation - Fix the function name
-  const gpuInfoMutation = useMutation({
-    mutationFn: () => apiService.getGPUInfo(),
+  // ✅ Voice to Text Mutation
+  const audioProcessingMutation = useMutation({
+    mutationFn: (base64Data) => {
+      console.log('🎤 Processing audio for voice-to-text...');
+      return apiService.processAudio(base64Data);
+    },
+    onMutate: () => {
+      setTranscriptionResult(null);
+    },
     onSuccess: (response) => {
-      if (response.data) {
-        setGpuInfo(response.data);
-        console.log('✅ GPU info received:', response.data);
+      console.log('✅ Voice-to-text processing complete:', response.data);
+      
+      if (response.data?.result) {
+        const result = response.data.result;
+        setTranscriptionResult(result);
+        
+        // Show success message
+        if (result.transcribed_text && 
+            result.transcribed_text !== "No speech detected in audio" &&
+            !result.transcribed_text.toLowerCase().includes('error')) {
+          Alert.alert('Success!', 'Speech converted to text successfully');
+        } else {
+          Alert.alert('No Speech Detected', 'Please try recording again with clearer speech');
+        }
       }
     },
     onError: (error) => {
-      console.error('❌ GPU info error:', error);
-      Alert.alert('Error', 'Failed to get GPU information');
-    }
-  });
-
-  // GPU Info Query
-  const { data: gpuInfoData, isLoading: isLoadingGPUInfo } = useQuery({
-    queryKey: ['gpu-info'],
-    queryFn: () => apiService.getGPUInfo(),
-    onSuccess: (response) => {
-      if (response.data) {
-        setGpuInfo(response.data);
-      }
-    },
-    onError: (error) => {
-      console.error('❌ GPU info error:', error);
-      Alert.alert('Error', 'Failed to get GPU information');
+      console.error('❌ Voice-to-text processing error:', error);
+      Alert.alert('Error', 'Failed to process audio. Please try again.');
     }
   });
 
@@ -101,7 +104,7 @@ export default function AIFeaturesScreen({ navigation }) {
     textAnalysisMutation.mutate(textInput.trim());
   };
 
-  // ✅ Handle Image Selection and Processing
+  // Handle Image Selection and Processing
   const handleImageSelected = async (imageData) => {
     setSelectedImage(imageData);
     setImageAnalysis(null); // Reset previous analysis
@@ -112,10 +115,20 @@ export default function AIFeaturesScreen({ navigation }) {
     }
   };
 
-  // ✅ Fix: Make sure this function name matches exactly
-  const handleGPUInfo = () => {
-    console.log('🎮 Getting GPU info...');
-    gpuInfoMutation.mutate();
+  // ✅ Handle Audio Recording and Processing
+  const handleAudioRecorded = async (audioData) => {
+    setSelectedAudio(audioData);
+    
+    if (audioData && audioData.base64) {
+      console.log('🎤 Starting voice-to-text conversion...');
+      audioProcessingMutation.mutate(audioData.base64);
+    }
+  };
+
+  // ✅ Clear Audio Results
+  const handleClearAudio = () => {
+    setSelectedAudio(null);
+    setTranscriptionResult(null);
   };
 
   const getSentimentColor = (sentiment) => {
@@ -125,18 +138,6 @@ export default function AIFeaturesScreen({ navigation }) {
       default: return '#9e9e9e';
     }
   };
-
-  if (isLoadingGPUInfo) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-        <Text>Loading AI information...</Text>
-      </View>
-    );
-  }
-
-  const gpu = gpuInfo?.data?.gpu_info;
-  const services = gpuInfo?.data?.ai_services;
 
   return (
     <ScrollView style={styles.container}>
@@ -218,7 +219,7 @@ export default function AIFeaturesScreen({ navigation }) {
           </Card.Content>
         </Card>
 
-        {/* ✅ Image Processing Section */}
+        {/* Image Processing Section */}
         <Card style={styles.sectionCard}>
           <Card.Content>
             <Text style={styles.sectionTitle}>📷 Image Processing</Text>
@@ -302,68 +303,125 @@ export default function AIFeaturesScreen({ navigation }) {
           </Card.Content>
         </Card>
 
-        <Divider style={styles.divider} />
-
-        {/* GPU Information Section */}
+        {/* ✅ Voice to Text Section */}
         <Card style={styles.sectionCard}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>🎮 GPU Information</Text>
+            <Text style={styles.sectionTitle}>🎤 Voice to Text</Text>
             <Text style={styles.sectionDescription}>
-              Check GPU status and AI model information
+              Test speech recognition and voice analysis
             </Text>
             
-            {/* ✅ Make sure the button calls the correct function */}
-            <Button
-              mode="outlined"
-              onPress={handleGPUInfo}
-              loading={gpuInfoMutation.isPending}
-              disabled={gpuInfoMutation.isPending}
-              style={styles.actionButton}
-              icon="memory"
-            >
-              Get GPU Info
-            </Button>
+            <View style={styles.voiceContainer}>
+              <Text style={styles.instructionText}>
+                Tap the record button below and speak clearly. Your speech will be converted to text.
+              </Text>
+              
+              <View style={styles.recorderContainer}>
+                <AudioRecorder 
+                  onAudioRecorded={handleAudioRecorded}
+                  currentAudio={selectedAudio}
+                />
+              </View>
 
-            {gpuInfo && (
-              <View style={styles.resultsContainer}>
-                <Text style={styles.resultsTitle}>System Information:</Text>
-                
-                {gpuInfo.gpu_info && (
-                  <View style={styles.gpuInfoContainer}>
-                    <Text style={styles.gpuInfoText}>
-                      🎮 GPU: {gpuInfo.gpu_info.gpu_name || 'Not available'}
-                    </Text>
-                    <Text style={styles.gpuInfoText}>
-                      💾 Memory: {gpuInfo.gpu_info.gpu_memory_allocated} / {gpuInfo.gpu_info.gpu_memory_total}
-                    </Text>
-                    <Text style={styles.gpuInfoText}>
-                      🔥 CUDA: {gpuInfo.gpu_info.cuda_available ? 'Available' : 'Not available'}
-                    </Text>
-                  </View>
-                )}
+              {selectedAudio && (
+                <Button
+                  mode="outlined"
+                  onPress={handleClearAudio}
+                  style={styles.clearButton}
+                  icon="delete"
+                >
+                  Clear Recording
+                </Button>
+              )}
+            </View>
 
-                {gpuInfo.ai_services && (
-                  <View style={styles.servicesContainer}>
-                    <Text style={styles.servicesTitle}>AI Services Status:</Text>
-                    {Object.entries(gpuInfo.ai_services).map(([service, info]) => (
-                      <View key={service} style={styles.serviceItem}>
-                        <Text style={styles.serviceName}>{service}:</Text>
-                        <Chip 
-                          style={[
-                            styles.statusChip,
-                            { backgroundColor: info.status === 'available' ? '#4caf50' : '#f44336' }
-                          ]}
-                          textStyle={{ color: 'white' }}
-                          compact
-                        >
-                          {info.status}
-                        </Chip>
-                      </View>
-                    ))}
-                  </View>
-                )}
+            {audioProcessingMutation.isPending && (
+              <View style={styles.processingContainer}>
+                <ActivityIndicator size="large" color="#6366f1" />
+                <Text style={styles.processingText}>
+                  Converting speech to text...
+                </Text>
               </View>
             )}
+
+            {transcriptionResult && (
+              <View style={styles.resultsContainer}>
+                <Text style={styles.resultsTitle}>Voice Analysis Results:</Text>
+                
+                {/* Transcribed Text */}
+                {transcriptionResult.transcribed_text && (
+                  <View style={styles.resultItem}>
+                    <Text style={styles.resultLabel}>Transcribed Text:</Text>
+                    <Text style={styles.transcribedTextResult}>
+                      {transcriptionResult.transcribed_text}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Audio Analysis */}
+                {transcriptionResult.analysis && (
+                  <>
+                    {transcriptionResult.analysis.sentiment && (
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Speech Sentiment:</Text>
+                        <Chip 
+                          style={[
+                            styles.sentimentChip,
+                            { backgroundColor: getSentimentColor(transcriptionResult.analysis.sentiment) }
+                          ]}
+                          textStyle={{ color: 'white' }}
+                        >
+                          {transcriptionResult.analysis.sentiment}
+                        </Chip>
+                      </View>
+                    )}
+
+                    {transcriptionResult.analysis.keywords && transcriptionResult.analysis.keywords.length > 0 && (
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Speech Keywords:</Text>
+                        <View style={styles.keywordsContainer}>
+                          {transcriptionResult.analysis.keywords.slice(0, 8).map((keyword, index) => (
+                            <Chip key={index} style={styles.keywordChip} compact>
+                              {keyword}
+                            </Chip>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {transcriptionResult.analysis.summary && (
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>Speech Summary:</Text>
+                        <Text style={styles.resultText}>
+                          {transcriptionResult.analysis.summary}
+                        </Text>
+                      </View>
+                    )}
+
+                    {transcriptionResult.analysis.confidence && (
+                      <View style={styles.resultItem}>
+                        <Text style={styles.resultLabel}>
+                          Recognition Confidence: {Math.round(transcriptionResult.analysis.confidence * 100)}%
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                <Text style={styles.successNote}>
+                  ✅ Voice processed successfully with speech recognition and AI analysis
+                </Text>
+              </View>
+            )}
+
+            {/* Tips for better voice recognition */}
+            <View style={styles.tipsContainer}>
+              <Text style={styles.tipsTitle}>💡 Tips for Better Results:</Text>
+              <Text style={styles.tipText}>• Speak clearly and at moderate pace</Text>
+              <Text style={styles.tipText}>• Record in a quiet environment</Text>
+              <Text style={styles.tipText}>• Hold device close to your mouth</Text>
+              <Text style={styles.tipText}>• Speak for at least 3-5 seconds</Text>
+            </View>
           </Card.Content>
         </Card>
       </View>
@@ -378,6 +436,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 100,
   },
   title: {
     fontSize: 28,
@@ -421,7 +480,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   
-  // ✅ Image Processing Styles
+  // Image Processing Styles
   processingContainer: {
     alignItems: 'center',
     padding: 20,
@@ -444,6 +503,56 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#ff9800',
   },
+  
+  // ✅ Voice to Text Styles
+  voiceContainer: {
+    marginBottom: 16,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  recorderContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  clearButton: {
+    marginTop: 12,
+    alignSelf: 'center',
+  },
+  transcribedTextResult: {
+    fontSize: 14,
+    backgroundColor: '#e8f5e8',
+    padding: 12,
+    borderRadius: 6,
+    color: '#333',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4caf50',
+    lineHeight: 20,
+  },
+  tipsContainer: {
+    backgroundColor: '#fff3cd',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ffc107',
+  },
+  tipsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 8,
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#856404',
+    marginBottom: 4,
+  },
+  
   successNote: {
     fontSize: 12,
     color: '#4caf50',
@@ -493,52 +602,5 @@ const styles = StyleSheet.create({
   keywordChip: {
     marginRight: 0,
     marginBottom: 6,
-  },
-  
-  // GPU Info Styles
-  gpuInfoContainer: {
-    backgroundColor: '#e8f5e8',
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  gpuInfoText: {
-    fontSize: 14,
-    color: '#2e7d32',
-    marginBottom: 4,
-  },
-  servicesContainer: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 6,
-  },
-  servicesTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#333',
-  },
-  serviceItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  serviceName: {
-    fontSize: 14,
-    color: '#333',
-    flex: 1,
-  },
-  statusChip: {
-    height: 28,
-  },
-  divider: {
-    marginVertical: 20,
-    backgroundColor: '#ddd',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
