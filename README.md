@@ -43,10 +43,6 @@ A beautiful and intelligent note-taking application that combines the power of A
 - **Audio Analysis** - AI insights from voice recordings
 - High-quality speech recognition
 
-### 🔍 **Advanced Search & Organization**
-- Smart search across all note content
-- Filter by categories, dates, and AI insights
-- Quick access to recently created notes
 
 ## 🚀 Quick Start
 
